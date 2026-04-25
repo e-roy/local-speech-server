@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+# Shell scripts and Unix-tooling configs MUST be LF
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Caddyfile   text eol=lf
+Dockerfile  text eol=lf
+*.html      text eol=lf
+*.md        text eol=lf
+.env.example text eol=lf
+
+# Windows-only artifacts (none today, future-proofing)
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary
+*.png       binary
+*.jpg       binary
+*.tar.gz    binary

@@ -1,0 +1,11 @@
+# Smoke-test override: exposes Caddy on 127.0.0.1:8080 and skips the tunnel.
+# Use:
+#   docker compose -f docker-compose.yml -f docker-compose.smoke.yml up -d
+# Then:
+#   curl -fsS -H "Authorization: Bearer $KEY" http://localhost:8080/v1/audio/voices
+services:
+  caddy:
+    ports:
+      - "127.0.0.1:8080:8080"
+  cloudflared:
+    profiles: ["disabled"]

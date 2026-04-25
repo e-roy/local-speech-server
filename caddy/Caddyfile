@@ -1,0 +1,59 @@
+{
+    admin off
+    auto_https off
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+:8080 {
+    encode gzip
+
+    header -Server
+
+    @preflight method OPTIONS
+    handle @preflight {
+        header Access-Control-Allow-Origin "{$ALLOWED_ORIGIN}"
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Max-Age "86400"
+        header Vary "Origin"
+        respond 204
+    }
+
+    # Static voice-browser page (unauthenticated — the page itself contains
+    # no secrets; the API calls it makes still require a bearer token).
+    @static path /voices /voices.html
+    handle @static {
+        root * /srv
+        rewrite /voices /voices.html
+        file_server
+    }
+
+    # Reject placeholder credentials explicitly so a default-config boot
+    # cannot serve real traffic.
+    @placeholder header_regexp Authorization "^Bearer CHANGEME_"
+    handle @placeholder {
+        respond "Refusing placeholder API key from .env.example. Run ./scripts/init-env.sh." 401 {
+            close
+        }
+    }
+
+    @authed header_regexp Authorization "^Bearer ({$API_KEYS})$"
+    handle @authed {
+        header Access-Control-Allow-Origin "{$ALLOWED_ORIGIN}"
+        header Vary "Origin"
+
+        reverse_proxy kokoro:8880 {
+            flush_interval -1
+        }
+    }
+
+    handle {
+        respond "Unauthorized" 401 {
+            close
+        }
+    }
+}

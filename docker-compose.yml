@@ -1,0 +1,47 @@
+services:
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: speech-kokoro
+    restart: unless-stopped
+    expose:
+      - "8880"
+    volumes:
+      - kokoro_models:/app/api/src/models
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - speech
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: speech-caddy
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/static:/srv:ro
+    environment:
+      - API_KEYS=${API_KEYS}
+      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN}
+    depends_on:
+      - kokoro
+    networks:
+      - speech
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: speech-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - caddy
+    networks:
+      - speech
+
+networks:
+  speech:
+    driver: bridge
+
+volumes:
+  kokoro_models:

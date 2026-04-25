@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voice Browser — Local Speech Server</title>
+  <style>
+    :root { color-scheme: light dark; --gap: 12px; }
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin: 0 0 4px; }
+    .sub { color: #888; margin: 0 0 24px; font-size: 14px; }
+    fieldset { border: 1px solid #ccc; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }
+    fieldset legend { padding: 0 6px; font-weight: 600; }
+    label { display: block; font-size: 13px; margin: 6px 0 2px; }
+    input[type=password], input[type=text] { width: 100%; padding: 8px; font: inherit; box-sizing: border-box; }
+    button { padding: 8px 14px; font: inherit; cursor: pointer; border-radius: 4px; border: 1px solid #888; background: #f6f6f6; }
+    button:hover:not(:disabled) { background: #eaeaea; }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    .group { margin-top: 24px; }
+    .group h2 { font-size: 16px; margin: 0 0 8px; color: #555; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--gap); }
+    .voice { border: 1px solid #ddd; border-radius: 6px; padding: 10px; display: flex; align-items: center; justify-content: space-between; }
+    .voice .name { font-family: ui-monospace, monospace; font-size: 13px; }
+    .key { font-family: ui-monospace, monospace; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    .err { color: #c00; }
+    .ok { color: #060; }
+    @media (prefers-color-scheme: dark) {
+      .key { background: #2a2a2a; } .group h2 { color: #aaa; border-bottom-color: #333; }
+      .voice { border-color: #444; } button { background: #222; border-color: #555; color: inherit; }
+      button:hover:not(:disabled) { background: #2c2c2c; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Voice Browser</h1>
+  <p class="sub">Audition installed voices on this Local Speech Server.</p>
+
+  <fieldset>
+    <legend>Setup</legend>
+    <label for="key">API key (bearer)</label>
+    <input id="key" type="password" autocomplete="off" placeholder="paste a key from .env" />
+    <label for="text">Sample text</label>
+    <input id="text" type="text" value="The quick brown fox jumps over the lazy dog." />
+    <div style="margin-top: 12px;">
+      <button id="load">Load voices</button>
+      <span id="status"></span>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Naming key</legend>
+    <p style="margin: 4px 0 8px; font-size: 13px;">
+      Voice IDs are <span class="key">&lt;accent&gt;&lt;gender&gt;_&lt;name&gt;</span>.
+      Accent: <span class="key">a</span>=American,
+      <span class="key">b</span>=British,
+      <span class="key">j</span>=Japanese,
+      <span class="key">z</span>=Mandarin,
+      <span class="key">e</span>=Spanish,
+      <span class="key">f</span>=French,
+      <span class="key">h</span>=Hindi,
+      <span class="key">i</span>=Italian,
+      <span class="key">p</span>=Portuguese.
+      Gender: <span class="key">f</span>=female, <span class="key">m</span>=male.
+    </p>
+  </fieldset>
+
+  <div id="groups"></div>
+
+<script>
+const ACCENTS = { a: "American", b: "British", j: "Japanese", z: "Mandarin", e: "Spanish", f: "French", h: "Hindi", i: "Italian", p: "Portuguese" };
+const GENDERS = { f: "Female", m: "Male" };
+const $ = (id) => document.getElementById(id);
+
+// Restore saved key + text
+$("key").value = localStorage.getItem("speech.key") || "";
+$("text").value = localStorage.getItem("speech.text") || $("text").value;
+$("key").addEventListener("change", () => localStorage.setItem("speech.key", $("key").value));
+$("text").addEventListener("change", () => localStorage.setItem("speech.text", $("text").value));
+
+function setStatus(msg, cls) {
+  const s = $("status");
+  s.textContent = msg ? "  " + msg : "";
+  s.className = cls || "";
+}
+
+function classify(voiceId) {
+  const m = /^([a-z])([fm])_(.+)$/.exec(voiceId);
+  if (!m) return { accent: "Other", gender: "Other", name: voiceId };
+  return { accent: ACCENTS[m[1]] || m[1], gender: GENDERS[m[2]] || m[2], name: m[3] };
+}
+
+async function loadVoices() {
+  const key = $("key").value.trim();
+  if (!key) { setStatus("Enter an API key first.", "err"); return; }
+  setStatus("Loading voices...");
+  $("load").disabled = true;
+  try {
+    const res = await fetch("/v1/audio/voices", { headers: { Authorization: "Bearer " + key } });
+    if (!res.ok) throw new Error("HTTP " + res.status + (res.status === 401 ? " — check the API key." : ""));
+    const data = await res.json();
+    const voices = data.voices || [];
+    if (!voices.length) { setStatus("No voices installed.", "err"); return; }
+    render(voices);
+    setStatus(voices.length + " voices loaded.", "ok");
+  } catch (e) {
+    setStatus("Failed: " + e.message, "err");
+  } finally {
+    $("load").disabled = false;
+  }
+}
+
+function render(voices) {
+  const groups = {};
+  for (const v of voices.sort()) {
+    const c = classify(v);
+    const g = c.accent + " — " + c.gender;
+    (groups[g] ||= []).push({ id: v, name: c.name });
+  }
+  const root = $("groups");
+  root.innerHTML = "";
+  for (const groupName of Object.keys(groups).sort()) {
+    const section = document.createElement("section");
+    section.className = "group";
+    const h = document.createElement("h2");
+    h.textContent = groupName;
+    section.appendChild(h);
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    for (const v of groups[groupName]) {
+      const card = document.createElement("div");
+      card.className = "voice";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = v.id;
+      const btn = document.createElement("button");
+      btn.textContent = "Play";
+      btn.addEventListener("click", () => play(v.id, btn));
+      card.appendChild(name);
+      card.appendChild(btn);
+      grid.appendChild(card);
+    }
+    section.appendChild(grid);
+    root.appendChild(section);
+  }
+}
+
+async function play(voiceId, btn) {
+  const key = $("key").value.trim();
+  const text = $("text").value.trim() || "Hello.";
+  btn.disabled = true;
+  btn.textContent = "...";
+  try {
+    const res = await fetch("/v1/audio/speech", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "kokoro", voice: voiceId, input: text, response_format: "mp3" }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+    await audio.play();
+  } catch (e) {
+    setStatus("Playback failed for " + voiceId + ": " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Play";
+  }
+}
+
+$("load").addEventListener("click", loadVoices);
+if ($("key").value) loadVoices();
+</script>
+</body>
+</html>
