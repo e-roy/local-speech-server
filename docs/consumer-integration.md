@@ -61,7 +61,7 @@ const blob = await res.blob();
 new Audio(URL.createObjectURL(blob)).play();
 ```
 
-> Only browsers loaded from the configured `ALLOWED_ORIGIN` can call this from JS. For a different origin, ask the operator to update `ALLOWED_ORIGIN` and restart Caddy, or to switch to the multi-origin Caddyfile snippet in [operations.md](operations.md).
+> Only browsers loaded from an origin in the operator's `ALLOWED_ORIGINS` allowlist can call this from JS. For a different origin (e.g. a new app or a localhost dev server), ask the operator to add it to `ALLOWED_ORIGINS` and restart Caddy — see [operations.md](operations.md).
 
 ## Voices
 

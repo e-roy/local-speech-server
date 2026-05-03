@@ -66,7 +66,7 @@ cd local-speech-server
 ./scripts/init-env.sh
 ```
 
-The script will prompt for `ALLOWED_ORIGIN` and generate two keys. Then open `.env` and paste the Cloudflare tunnel token from step 3 below.
+The script will prompt for your CORS origin(s) and generate two keys. For multiple origins (dev + prod, multiple apps), pipe-separate them at the prompt: `https://app.example.com|http://localhost:5173`. Then open `.env` and paste the Cloudflare tunnel token from step 3 below.
 
 ### 2. Smoke-test locally (no tunnel yet)
 
@@ -139,7 +139,7 @@ See [docs/consumer-integration.md](docs/consumer-integration.md) for OpenAI-SDK 
 ## Further reading
 
 - [docs/consumer-integration.md](docs/consumer-integration.md) — how to call the service from client apps
-- [docs/operations.md](docs/operations.md) — key rotation, multi-origin CORS, updates, backups
+- [docs/operations.md](docs/operations.md) — key rotation, CORS origins, updates, backups
 - [docs/adding-stt.md](docs/adding-stt.md) — how to extend the service with speech-to-text
 
 ## Troubleshooting

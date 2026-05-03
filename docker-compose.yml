@@ -23,7 +23,7 @@ services:
       - ./caddy/static:/srv:ro
     environment:
       - API_KEYS=${API_KEYS}
-      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
     depends_on:
       - kokoro
     networks:

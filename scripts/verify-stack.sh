@@ -26,9 +26,11 @@ fi
 if [[ "$MODE" == "smoke" ]]; then
   BASE="http://localhost:8080"
 else
-  # Derive base from ALLOWED_ORIGIN if it points at the speech subdomain,
-  # else require the operator to pass it.
-  BASE="${SPEECH_BASE:-${ALLOWED_ORIGIN:-}}"
+  # Fall back to the first origin in ALLOWED_ORIGINS if SPEECH_BASE is unset.
+  # That fallback only works when an allowlisted origin happens to also be
+  # the speech URL — multi-origin operators should set SPEECH_BASE explicitly.
+  FIRST_ORIGIN="${ALLOWED_ORIGINS%%|*}"
+  BASE="${SPEECH_BASE:-${FIRST_ORIGIN:-}}"
   if [[ -z "$BASE" || "$BASE" == CHANGEME_* ]]; then
     echo "FAIL: set SPEECH_BASE=https://speech.example.com and re-run." >&2
     exit 1

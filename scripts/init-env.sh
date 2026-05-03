@@ -21,16 +21,18 @@ fi
 K1=$(./scripts/generate-key.sh)
 K2=$(./scripts/generate-key.sh)
 
-read -r -p "Allowed CORS origin (e.g. https://app.example.com): " ORIGIN
-if [[ -z "$ORIGIN" ]]; then
-  echo "ALLOWED_ORIGIN cannot be empty." >&2
+read -r -p "Allowed CORS origin(s), pipe-separated for multiple (e.g. https://app.example.com|http://localhost:5173): " ORIGINS
+if [[ -z "$ORIGINS" ]]; then
+  echo "ALLOWED_ORIGINS cannot be empty." >&2
   exit 1
 fi
 
 # Use perl for portable in-place substitution (sed -i differs between BSD and GNU).
+# Pass the origin list via env var so the literal '|' between origins is not
+# misread as a perl substitution delimiter.
 cp .env.example .env
 perl -pi -e "s|^API_KEYS=.*|API_KEYS=${K1}\\|${K2}|" .env
-perl -pi -e "s|^ALLOWED_ORIGIN=.*|ALLOWED_ORIGIN=${ORIGIN}|" .env
+ORIGINS_VAL="$ORIGINS" perl -pi -e 's|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=$ENV{ORIGINS_VAL}|' .env
 
 echo
 echo "Wrote .env with two fresh API keys:"

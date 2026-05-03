@@ -37,7 +37,7 @@ Replace the single `reverse_proxy kokoro:8880` block inside `handle @authed` wit
 
 ```caddy
 handle @authed {
-    header Access-Control-Allow-Origin "{$ALLOWED_ORIGIN}"
+    header @allowedOrigin Access-Control-Allow-Origin "{http.request.header.Origin}"
     header Vary "Origin"
 
     # TTS

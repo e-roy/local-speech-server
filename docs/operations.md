@@ -41,21 +41,26 @@ Rotate a compromised or stale key without downtime:
 4. Roll the new key out to consumers.
 5. Once all consumers are migrated, remove the old key from `.env` and restart Caddy again.
 
-## Multi-origin CORS
+## CORS origins
 
-The default `ALLOWED_ORIGIN` is a single origin. To allow multiple origins, replace the static CORS header lines in `caddy/Caddyfile` with a regex matcher that echoes the request's `Origin` back when it matches an allowlist:
+`ALLOWED_ORIGINS` in `.env` is a pipe-separated allowlist. Add or remove origins to support dev/prod splits, multiple consumer apps, or local development:
 
-```caddy
-@allowedOrigin header_regexp Origin "^(https://app1\.example\.com|https://app2\.example\.com)$"
-header @allowedOrigin Access-Control-Allow-Origin "{header.Origin}"
-header @allowedOrigin Vary "Origin"
+```
+ALLOWED_ORIGINS=https://app.example.com|https://staging.example.com|http://localhost:5173
 ```
 
-Apply this in both the `@preflight` and `@authed` handlers, replacing the `header Access-Control-Allow-Origin "{$ALLOWED_ORIGIN}"` lines. Then:
+The Caddyfile inlines the value directly into a regex matcher (`^({$ALLOWED_ORIGINS})$`). When the request's `Origin` header matches, Caddy echoes it back as `Access-Control-Allow-Origin`; when it doesn't, no CORS header is set and the browser blocks the call.
+
+After editing:
 
 ```bash
 docker compose restart caddy
 ```
+
+Notes:
+
+- The pipe is the regex alternation operator — entries are independent regex alternatives, not literal strings. A literal `.` in an origin matches any character, so `app.example.com` would also match `appXexample.com`. For typical subdomain allowlists this is fine; if you need exact matching, escape dots as `\.`.
+- Server-side callers (no `Origin` header) are unaffected — only bearer-token auth gates them.
 
 ## Updating Kokoro
 

@@ -28,10 +28,10 @@ docker compose up -d --force-recreate
 Setup and verification:
 
 ```bash
-./scripts/init-env.sh                  # one-time: prompts for ALLOWED_ORIGIN, generates two API keys, writes .env
+./scripts/init-env.sh                  # one-time: prompts for ALLOWED_ORIGINS, generates two API keys, writes .env
 ./scripts/generate-key.sh              # print a fresh 32-char URL-safe key
 ./scripts/verify-stack.sh smoke        # post-bringup checks against http://localhost:8080
-./scripts/verify-stack.sh              # post-bringup checks against $SPEECH_BASE (or ALLOWED_ORIGIN)
+./scripts/verify-stack.sh              # post-bringup checks against $SPEECH_BASE (or first entry in ALLOWED_ORIGINS)
 ```
 
 After editing the Caddyfile or `.env`:
@@ -52,7 +52,7 @@ Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Ca
 
 All three containers share the `speech` bridge network. The Cloudflare tunnel's public hostname must point at `caddy:8080` (the Docker service name) — not `localhost` or `host.docker.internal` — because cloudflared resolves it over the internal Docker network. This is the most common operator misconfiguration; preserve it when editing tunnel docs.
 
-Caddy is the only piece doing policy. Authentication is a regex match on a pipe-separated `${API_KEYS}` env var inlined into the Caddyfile (`^Bearer ({$API_KEYS})$`). CORS is a single `${ALLOWED_ORIGIN}`; multi-origin support requires swapping the static header for a regex matcher (see [docs/operations.md](docs/operations.md)).
+Caddy is the only piece doing policy. Authentication is a regex match on a pipe-separated `${API_KEYS}` env var inlined into the Caddyfile (`^Bearer ({$API_KEYS})$`). CORS uses the same pattern: `${ALLOWED_ORIGINS}` is a pipe-separated allowlist inlined into a `header_regexp` matcher (`^({$ALLOWED_ORIGINS})$`); when the request's `Origin` matches, Caddy echoes it back as `Access-Control-Allow-Origin`. Note that pipes are regex alternation, so a literal `.` in an origin is technically a wildcard — fine for typical subdomain allowlists; document `\.` escaping if a stricter setup ever matters.
 
 Kokoro-FastAPI is upstream code we do not touch — it already speaks the OpenAI Audio API (`/v1/audio/speech`, `/v1/audio/voices`). Models persist in the `kokoro_models` named volume; first-run download is slow (minutes) and operators frequently mistake it for a hang.
 
