@@ -54,7 +54,7 @@ docker compose up -d --force-recreate <service>
 
 ## Architecture
 
-Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/path routing) → Kokoro-FastAPI (`:8880`, `/v1/audio/speech` + `/v1/audio/voices`) or Speaches (`:8000`, `/v1/audio/transcriptions` + `/v1/audio/translations`)**. Authenticated requests to any other path get 404 — the published surface is deliberately smaller than what the backends expose.
+Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/path routing) → Kokoro-FastAPI (`:8880`, `/v1/audio/speech` + `/v1/audio/voices`) or Speaches (`:8000`, `/v1/audio/transcriptions` + `/v1/audio/translations`, plus read-only `GET /v1/models*` for discovery)**. Authenticated requests to any other path get 404 — the published surface is deliberately smaller than what the backends expose.
 
 All four containers share the `speech` bridge network. The Cloudflare tunnel's public hostname must point at `caddy:8080` (the Docker service name) — not `localhost` or `host.docker.internal` — because cloudflared resolves it over the internal Docker network. This is the most common operator misconfiguration; preserve it when editing tunnel docs.
 

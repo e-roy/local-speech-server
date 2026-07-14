@@ -102,9 +102,9 @@ The model cache survives in the `speaches_models` named volume.
    ```
 3. Roll the new model ID out to consumers (it is their `model` parameter).
 
-Old models stay on disk until removed. To list or delete downloaded models —
-the management API is deliberately not exposed through Caddy, so run it on
-the Docker network:
+Old models stay on disk until removed. Consumers can list installed models
+via `GET /v1/models` (read-only, routed through Caddy), but installing and
+deleting stay operator-only — run those on the Docker network:
 
 ```bash
 docker compose exec speaches curl -s http://localhost:8000/v1/models

@@ -109,6 +109,25 @@ Notes:
   `stream=true` or split the audio client-side. Details in [stt.md](stt.md).
 - `/v1/audio/translations` takes the same fields and returns English text.
 
+## Discovering models
+
+`GET /v1/models` (and `GET /v1/models/{id}`) returns the installed STT models
+in the standard OpenAI list shape — useful for agents and SDKs that discover
+models instead of hardcoding IDs:
+
+```ts
+const models = await client.models.list();
+// -> data: [{ id: "Systran/faster-distil-whisper-small.en", ... }]
+```
+
+Two caveats:
+
+- The list covers **STT models only**. TTS does not appear in it — the TTS
+  model is always `"kokoro"`, and voices are discovered via
+  `/v1/audio/voices`.
+- The endpoint is read-only through this service; installing or removing
+  models is an operator action (see [operations.md](operations.md)).
+
 ## Voices
 
 ### Browse and audition

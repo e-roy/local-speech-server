@@ -101,9 +101,12 @@ Caddyfile and no client code.
   endpoint for its TTS side; the Caddyfile deliberately shadows it because
   Kokoro is the TTS engine here.
 - **Unrouted paths 404.** Both backends expose more routes than the service
-  publishes (model management, docs pages, health). Caddy only forwards the
-  documented `/v1/audio/*` surface; model management happens on the Docker
-  network via `docker compose exec` (see operations.md).
+  publishes (model management, docs pages, health). Caddy forwards the
+  documented `/v1/audio/*` surface plus read-only model discovery
+  (`GET /v1/models`, `GET /v1/models/{id}`, served by Speaches so SDKs and
+  agents can list installed STT models). Mutating model management (POST /
+  DELETE) stays unrouted and happens on the Docker network via
+  `docker compose exec` (see operations.md).
 
 ## Related extensions
 

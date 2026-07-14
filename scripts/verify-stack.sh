@@ -106,10 +106,20 @@ if [[ "$n" -lt 1 ]]; then
 fi
 echo "  ok ($n voices installed)"
 
-echo "Checking TTS -> STT round-trip (synthesize a clip, then transcribe it)..."
 # Use the first preloaded model from docker-compose.yml unless overridden.
 STT_MODEL="${STT_MODEL:-$(docker compose config 2>/dev/null | sed -n 's/.*PRELOAD_MODELS[=:][^[]*\["\([^"]*\)".*/\1/p' | head -1)}"
 STT_MODEL="${STT_MODEL:-Systran/faster-distil-whisper-small.en}"
+
+echo "Checking /v1/models lists the STT model..."
+if ! curl -fsS -H "Authorization: Bearer $KEY" "$BASE/v1/models" | grep -q "$STT_MODEL"; then
+  echo "FAIL: /v1/models did not include $STT_MODEL. Either the model" >&2
+  echo "      download failed (check 'docker compose logs speaches') or the" >&2
+  echo "      Caddy models route is missing." >&2
+  exit 1
+fi
+echo "  ok"
+
+echo "Checking TTS -> STT round-trip (synthesize a clip, then transcribe it)..."
 clip=$(mktemp)
 trap 'rm -f "$clip"' EXIT
 if ! curl -fsS -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \

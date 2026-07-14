@@ -90,6 +90,26 @@
             }
         }
 
+        # Model discovery — read-only. Lets OpenAI SDKs and agents list the
+        # installed STT models instead of guessing IDs. GET only: model
+        # install (POST) and delete stay unexposed, operator-only.
+        # Note: lists Speaches' models — TTS is always model "kokoro" and
+        # its voices come from /v1/audio/voices.
+        @models {
+            method GET
+            path /v1/models /v1/models/*
+        }
+        handle @models {
+            reverse_proxy speaches:8000 {
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Max-Age
+                header_down -Access-Control-Allow-Credentials
+                header_down -Vary
+            }
+        }
+
         # Anything else, even with a valid key, is not part of the service
         # surface (backends expose more routes than we publish).
         handle {
