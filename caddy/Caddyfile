@@ -141,6 +141,13 @@
                     # Fail fast when Ollama is off (see handle_errors below).
                     dial_timeout 2s
                 }
+                # Ollama's DNS-rebinding protection 403s requests whose Host
+                # isn't localhost-like or allowlisted; the public hostname
+                # fails that check. Present the upstream's own name
+                # (*.internal is on Ollama's allowlist) and drop Origin —
+                # Caddy owns CORS and Ollama would 403 foreign origins.
+                header_up Host {upstream_hostport}
+                header_up -Origin
                 header_down -Access-Control-Allow-Origin
                 header_down -Access-Control-Allow-Methods
                 header_down -Access-Control-Allow-Headers

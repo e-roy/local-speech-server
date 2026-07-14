@@ -140,8 +140,11 @@ fi
 echo "  ok"
 
 echo "Checking realtime endpoint accepts WebSocket upgrades (header auth)..."
+# --http1.1 is required: Upgrade headers are an HTTP/1.1 mechanism and are
+# dropped when curl negotiates HTTP/2 with Cloudflare (browsers always open
+# WebSockets over HTTP/1.1, so real clients are unaffected).
 ws_nonce="dGhlIHNhbXBsZSBub25jZQ=="
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --http1.1 \
   -H "Authorization: Bearer $KEY" \
   -H "Connection: Upgrade" -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: $ws_nonce" \
@@ -154,7 +157,7 @@ fi
 echo "  ok"
 
 echo "Checking realtime browser auth (?api_key=)..."
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --http1.1 \
   -H "Connection: Upgrade" -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: $ws_nonce" \
   "$BASE/v1/realtime?model=verify-check&api_key=$KEY" || true)
