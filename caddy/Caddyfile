@@ -110,6 +110,31 @@
             }
         }
 
+        # LLM — Ollama on the HOST (native; MLX-accelerated on Apple
+        # Silicon), not a container. /v1/llm/* is the LLM's own OpenAI
+        # surface: point an OpenAI client at https://<host>/v1/llm and
+        # chat.completions / models.list() work unmodified. handle_path
+        # strips /v1/llm and the rewrite restores /v1, so only Ollama's
+        # OpenAI-compatible routes are reachable — its native /api/*
+        # (pull, delete, etc.) is not.
+        handle_path /v1/llm/* {
+            rewrite * /v1{uri}
+            reverse_proxy host.docker.internal:11434 {
+                transport http {
+                    # Fail fast when Ollama is off (see handle_errors below).
+                    dial_timeout 2s
+                }
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Max-Age
+                header_down -Access-Control-Allow-Credentials
+                header_down -Vary
+                # Unbuffered so chat token streaming (SSE) flows live.
+                flush_interval -1
+            }
+        }
+
         # Anything else, even with a valid key, is not part of the service
         # surface (backends expose more routes than we publish).
         handle {
@@ -123,5 +148,15 @@
         respond "Unauthorized" 401 {
             close
         }
+    }
+
+    # When a backend is unreachable (connection refused / dial timeout),
+    # shape the error as OpenAI-style JSON so SDK consumers get a catchable,
+    # explanatory APIError instead of an empty 502. In practice the only
+    # routinely-absent backend is the host-side Ollama (the Docker engines
+    # restart with the stack).
+    handle_errors 502 503 504 {
+        header Content-Type application/json
+        respond `{"error":{"message":"Upstream engine unavailable. If this was a /v1/llm request, check that Ollama is running on the host.","type":"api_error","code":"upstream_unavailable"}}`
     }
 }

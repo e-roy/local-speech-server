@@ -124,9 +124,57 @@ Two caveats:
 
 - The list covers **STT models only**. TTS does not appear in it — the TTS
   model is always `"kokoro"`, and voices are discovered via
-  `/v1/audio/voices`.
+  `/v1/audio/voices`. LLM models have their own listing (next section).
 - The endpoint is read-only through this service; installing or removing
   models is an operator action (see [operations.md](operations.md)).
+
+## LLM (chat completions)
+
+The service also fronts an LLM (Ollama running on the host). It has its own
+OpenAI surface under `/v1/llm` — use a client instance with that base URL
+and everything is SDK-standard, same API key:
+
+```ts
+const llm = new OpenAI({
+  baseURL: "https://speech.example.com/v1/llm",
+  apiKey: process.env.SPEECH_API_KEY,
+});
+
+const models = await llm.models.list();          // discover pulled models
+const stream = await llm.chat.completions.create({
+  model: "llama3.2:3b",                          // any pulled model
+  messages: [{ role: "user", content: transcript.text }],
+  stream: true,                                  // prefer streaming
+});
+```
+
+Notes:
+
+- **Treat the model name as config** (env var next to the API key), like the
+  STT model. Unknown/unpulled models return a 404 from the engine; pulling
+  models is an operator action.
+- **Prefer `stream: true`** — better perceived latency for voice UX, and
+  long generations stay clear of Cloudflare's ~100 s response timeout.
+- **Handle the LLM being offline.** It runs on the host, outside the Docker
+  stack, and may be down independently of TTS/STT. In that case requests
+  fail fast (~2 s) with a 502 and an OpenAI-style JSON error
+  (`code: "upstream_unavailable"`) — catch it and degrade gracefully:
+
+```ts
+try {
+  const reply = await llm.chat.completions.create({ ... });
+} catch (err) {
+  if (err instanceof OpenAI.APIError && err.status === 502) {
+    // LLM offline — transcription/TTS still work; degrade accordingly.
+  } else throw err;
+}
+```
+
+- For a voice loop (hear → think → speak), chain the three calls:
+  `/v1/audio/transcriptions` → `/v1/llm/chat/completions` →
+  `/v1/audio/speech`. Stream the LLM tokens and start TTS on the first
+  sentence boundary for the snappiest feel. Details and roadmap in
+  [llm.md](llm.md).
 
 ## Voices
 

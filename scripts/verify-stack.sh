@@ -119,6 +119,16 @@ if ! curl -fsS -H "Authorization: Bearer $KEY" "$BASE/v1/models" | grep -q "$STT
 fi
 echo "  ok"
 
+echo "Checking LLM upstream (optional — Ollama on the host)..."
+llm_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -H "Authorization: Bearer $KEY" "$BASE/v1/llm/models" || true)
+if [[ "$llm_code" == "200" ]]; then
+  echo "  ok"
+else
+  echo "  WARN: LLM upstream not reachable (got ${llm_code:-000}). The speech"
+  echo "        stack is unaffected; /v1/llm/* consumers get a JSON 502 until"
+  echo "        Ollama is running on the host. See docs/llm.md."
+fi
+
 echo "Checking TTS -> STT round-trip (synthesize a clip, then transcribe it)..."
 clip=$(mktemp)
 trap 'rm -f "$clip"' EXIT

@@ -47,10 +47,15 @@ TTS is backed by [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI); STT
    │                                          │ volume:          │   │
    │                                          │ speaches_models  │   │
    │                                          └──────────────────┘   │
+   │                                                                 │
+   │  ┌───────────────────────────────────────────────────────────┐  │
+   │  │ host-native (no Docker): Ollama :11434 - LLM on the GPU   │  │
+   │  │ reached by Caddy at /v1/llm/* (via host.docker.internal)  │  │
+   │  └───────────────────────────────────────────────────────────┘  │
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-Cloudflare's edge terminates TLS with a browser-trusted cert; traffic flows through a persistent tunnel to `cloudflared` on the Mac Mini, which forwards to Caddy over the Docker network. Caddy enforces bearer-token auth and CORS, then routes by path: speech synthesis and voice listing to Kokoro-FastAPI, transcription and translation to Speaches.
+Cloudflare's edge terminates TLS with a browser-trusted cert; traffic flows through a persistent tunnel to `cloudflared` on the Mac Mini, which forwards to Caddy over the Docker network. Caddy enforces bearer-token auth and CORS, then routes by path: speech synthesis and voice listing to Kokoro-FastAPI, transcription and translation to Speaches, and `/v1/llm/*` to an optional Ollama running natively on the host (native so the LLM gets the GPU — Docker on macOS is CPU-only). The stack runs fine without Ollama; LLM routes then fail fast with a JSON 502.
 
 ## Prerequisites
 
@@ -149,6 +154,7 @@ See [docs/consumer-integration.md](docs/consumer-integration.md) for OpenAI-SDK 
 - [docs/consumer-integration.md](docs/consumer-integration.md) — how to call the service from client apps
 - [docs/operations.md](docs/operations.md) — key rotation, CORS origins, updates, backups
 - [docs/stt.md](docs/stt.md) — the speech-to-text subsystem: models, limits, design notes
+- [docs/llm.md](docs/llm.md) — the LLM subsystem (host-side Ollama): endpoint surface, models, failure behavior, realtime roadmap
 
 ## Troubleshooting
 

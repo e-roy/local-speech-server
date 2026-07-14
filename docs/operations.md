@@ -13,6 +13,7 @@ These system settings make the stack survive reboots, power blips, and being lef
 5. **Docker Desktop autostart.** Docker Desktop → Settings → General → "Start Docker Desktop when you log in" → on. Also turn off "Open Docker Dashboard at startup" (no need for the GUI).
 6. **Docker Desktop resources.** Docker Desktop → Settings → Resources → CPUs ≥ 4, Memory ≥ 6 GB. Kokoro-CPU is light; the STT model adds roughly a gigabyte while loaded — headroom helps.
 7. **Container restart policy.** Already set to `restart: unless-stopped` in `docker-compose.yml`. Containers come back automatically when Docker Desktop comes back.
+8. **Ollama autostart (only if using the LLM features).** Ollama menu-bar icon → Settings → "Start at login" → on. See [llm.md](llm.md).
 
 Verify: reboot, wait ~60 seconds, and from a different machine run
 
@@ -110,6 +111,24 @@ deleting stay operator-only — run those on the Docker network:
 docker compose exec speaches curl -s http://localhost:8000/v1/models
 docker compose exec speaches curl -s -X DELETE "http://localhost:8000/v1/models/<model-id>"
 ```
+
+## LLM upstream (Ollama on the host)
+
+The LLM behind `/v1/llm/*` is **not part of the compose stack** — it is
+Ollama running natively on the Mac (for GPU access; see
+[llm.md](llm.md)). That makes it a host dependency with its own lifecycle:
+
+- **Install / run:** the Ollama macOS app. For reboot-survival, enable
+  "Start at login" (menu-bar icon → Settings), mirroring the Docker Desktop
+  autostart in the first-time setup list above.
+- **Models:** `ollama pull llama3.2:3b` (operator-only; consumers can list
+  pulled models via `GET /v1/llm/models` but cannot install or delete).
+- **Idle unload:** Ollama frees a model after ~5 idle minutes; set
+  `OLLAMA_KEEP_ALIVE=1h` (or `-1` for never) in Ollama's environment if
+  first-turn reload latency matters.
+- **When it's down:** `/v1/llm/*` requests fail fast with an OpenAI-style
+  JSON 502; TTS/STT are unaffected and `verify-stack.sh` reports a
+  non-fatal WARN. Check with `ollama ps` on the host.
 
 ## Updating cloudflared
 
