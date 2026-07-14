@@ -110,10 +110,10 @@ Caddyfile and no client code.
 
 ## Related extensions
 
-- **Realtime / speech-to-speech.** Speaches ships a WebSocket `/v1/realtime`
-  API. Exposing it would need a new Caddy route (WebSocket proxying works
-  through `reverse_proxy` as-is) and consumer-side session handling —
-  spec it before wiring it up.
+- **Realtime / speech-to-speech: implemented.** `/v1/realtime` (WebSocket)
+  runs the composed STT → LLM → TTS loop server-side — see
+  [realtime.md](realtime.md). Note `intent=transcription` gives streaming
+  STT-only sessions, an alternative to `stream=true` on this endpoint.
 - **Multiple TTS voice engines.** If a second TTS engine (e.g. Piper) is ever
   desired, add it as a parallel service and route by URL path, mirroring how
   STT was added.

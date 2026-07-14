@@ -26,7 +26,11 @@ services:
     environment:
       # JSON array of model IDs downloaded at startup if missing. Models not
       # in this list 404 at request time — see docs/stt.md to change models.
-      - 'PRELOAD_MODELS=["Systran/faster-distil-whisper-small.en"]'
+      # The Kokoro ONNX entry is the TTS voice of /v1/realtime sessions.
+      - 'PRELOAD_MODELS=["Systran/faster-distil-whisper-small.en","speaches-ai/Kokoro-82M-v1.0-ONNX"]'
+      # Realtime sessions call an OpenAI-compatible chat backend: the same
+      # host-side Ollama that Caddy publishes at /v1/llm/* (docs/llm.md).
+      - CHAT_COMPLETION_BASE_URL=http://host.docker.internal:11434/v1
       # int8 quantization is the standard speed/quality trade-off on CPU.
       - WHISPER__COMPUTE_TYPE=int8
       - LOG_LEVEL=info

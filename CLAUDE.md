@@ -58,6 +58,8 @@ Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Ca
 
 One backend is host-side, not containerized: `/v1/llm/*` rewrites to `/v1/*` on `host.docker.internal:11434` (Ollama, native for GPU access — see [docs/llm.md](docs/llm.md)). It is an optional dependency: when absent, Caddy fails the dial in ~2 s and a site-wide `handle_errors` shapes 502/503/504 into OpenAI-style JSON; `verify-stack.sh` treats it as WARN, not FAIL.
 
+`/v1/realtime` (WebSocket, Speaches) is the composed voice-session mode — server-side STT → LLM → TTS with VAD turn-taking ([docs/realtime.md](docs/realtime.md)). It is the only route that also accepts `?api_key=` query auth, because browser WebSockets cannot set an `Authorization` header; that matcher is scoped to exactly this path and mirrors the placeholder-key rejection.
+
 All four containers share the `speech` bridge network. The Cloudflare tunnel's public hostname must point at `caddy:8080` (the Docker service name) — not `localhost` or `host.docker.internal` — because cloudflared resolves it over the internal Docker network. This is the most common operator misconfiguration; preserve it when editing tunnel docs.
 
 Caddy is the only piece doing policy. Authentication is a regex match on a pipe-separated `${API_KEYS}` env var inlined into the Caddyfile (`^Bearer ({$API_KEYS})$`). CORS uses the same pattern: `${ALLOWED_ORIGINS}` is a pipe-separated allowlist inlined into a `header_regexp` matcher (`^({$ALLOWED_ORIGINS})$`); when the request's `Origin` matches, Caddy echoes it back as `Access-Control-Allow-Origin`. Note that pipes are regex alternation, so a literal `.` in an origin is technically a wildcard — fine for typical subdomain allowlists; document `\.` escaping if a stricter setup ever matters.
@@ -68,7 +70,8 @@ State: the only stateful things in the stack are the two model volumes. The Clou
 
 ## Conventions worth preserving
 
-- **Placeholder rejection.** The Caddyfile explicitly 401s any `Bearer CHANGEME_*` token so a default-config boot cannot serve real traffic. Keep this matcher when editing auth logic — it is the safety net for `init-env.sh` not having been run.
+- **À la carte + composed.** Every engine is independently addressable (TTS alone, STT alone, LLM alone); composed modes like `/v1/realtime` are additive and get no privileged path — their session models are consumer-chosen from the same operator-installed pools, and new composed features must not change existing route shapes.
+- **Placeholder rejection.** The Caddyfile explicitly 401s any `Bearer CHANGEME_*` token so a default-config boot cannot serve real traffic. Keep this matcher when editing auth logic — it is the safety net for `init-env.sh` not having been run. (The realtime query-param auth has its own mirrored `CHANGEME_` rejection — keep both.)
 - **Two-key rotation pattern.** `API_KEYS` is pipe-separated specifically to support zero-downtime rotation: add new key, restart Caddy, migrate consumers, remove old key. `init-env.sh` generates two keys for this reason.
 - **`verify-stack.sh` is the troubleshooting entry point.** When something breaks, the README and this file both point operators to run it first. New checks belong there, in the same "fail with a specific message" style.
 - **LF line endings everywhere.** `.gitattributes` enforces `eol=lf` for shell scripts, YAML, Caddyfile, HTML, Markdown, and `.env.example`. Editing on Windows (this repo's primary dev host) without respecting that will break the scripts on the Mac Mini target.

@@ -95,7 +95,9 @@ The model cache survives in the `speaches_models` named volume.
 
 1. Edit `PRELOAD_MODELS` in `docker-compose.yml` — a JSON array of Hugging
    Face repo IDs; see [stt.md](stt.md) for sensible choices. Only listed
-   models can be used; nothing downloads at request time.
+   models can be used; nothing downloads at request time. Keep the
+   `speaches-ai/Kokoro-82M-v1.0-ONNX` entry — it is the TTS voice of
+   `/v1/realtime` sessions ([realtime.md](realtime.md)).
 2. Recreate the service; missing models download on startup:
    ```bash
    docker compose up -d --force-recreate speaches

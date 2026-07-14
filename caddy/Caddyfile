@@ -110,6 +110,23 @@
             }
         }
 
+        # Realtime voice sessions (WebSocket) — Speaches orchestrates
+        # STT → LLM (host-side Ollama) → TTS server-side. Server-side
+        # clients authenticate with the normal Authorization header;
+        # browser WebSocket clients cannot set one and use the scoped
+        # query-param matcher further below instead.
+        @realtime path /v1/realtime
+        handle @realtime {
+            reverse_proxy speaches:8000 {
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Max-Age
+                header_down -Access-Control-Allow-Credentials
+                header_down -Vary
+            }
+        }
+
         # LLM — Ollama on the HOST (native; MLX-accelerated on Apple
         # Silicon), not a container. /v1/llm/* is the LLM's own OpenAI
         # surface: point an OpenAI client at https://<host>/v1/llm and
@@ -141,6 +158,30 @@
             respond "Not found" 404 {
                 close
             }
+        }
+    }
+
+    # Browser WebSocket clients cannot send an Authorization header, so
+    # /v1/realtime (and only it) also accepts the key as ?api_key=<key>.
+    # Placeholder rejection is checked first, mirroring the header path.
+    # Note: URLs appear in edge/proxy logs — clients that can set headers
+    # should keep using header auth.
+    @placeholderQueryKey expression `path('/v1/realtime') && {http.request.uri.query.api_key}.startsWith('CHANGEME_')`
+    handle @placeholderQueryKey {
+        respond "Refusing placeholder API key from .env.example. Run ./scripts/init-env.sh." 401 {
+            close
+        }
+    }
+
+    @realtimeQueryAuth expression `path('/v1/realtime') && {http.request.uri.query.api_key}.matches('^({$API_KEYS})$')`
+    handle @realtimeQueryAuth {
+        reverse_proxy speaches:8000 {
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Access-Control-Max-Age
+            header_down -Access-Control-Allow-Credentials
+            header_down -Vary
         }
     }
 

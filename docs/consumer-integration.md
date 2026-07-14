@@ -176,6 +176,19 @@ try {
   sentence boundary for the snappiest feel. Details and roadmap in
   [llm.md](llm.md).
 
+## Realtime voice sessions (WebSocket)
+
+For hands-free conversation, `wss://speech.example.com/v1/realtime` runs the
+whole hear → think → speak loop server-side over one WebSocket, with
+voice-activity detection handling turn-taking (OpenAI Realtime API event
+protocol). The chat model is chosen per session
+(`?model=<pulled-ollama-model>`), and browsers authenticate with
+`&api_key=<key>` since they cannot set WebSocket headers. Connection
+details, session defaults, and honest limitations (turn-based, no barge-in,
+seconds-per-turn latency) are in [realtime.md](realtime.md). The HTTP
+endpoints above remain the right choice for everything that isn't a live
+conversation.
+
 ## Voices
 
 ### Browse and audition

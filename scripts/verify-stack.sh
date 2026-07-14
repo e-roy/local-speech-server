@@ -125,9 +125,44 @@ if [[ "$llm_code" == "200" ]]; then
   echo "  ok"
 else
   echo "  WARN: LLM upstream not reachable (got ${llm_code:-000}). The speech"
-  echo "        stack is unaffected; /v1/llm/* consumers get a JSON 502 until"
-  echo "        Ollama is running on the host. See docs/llm.md."
+  echo "        stack is unaffected; /v1/llm/* consumers get a JSON 502 and"
+  echo "        /v1/realtime conversation sessions will fail until Ollama is"
+  echo "        running on the host. See docs/llm.md."
 fi
+
+echo "Checking realtime TTS model is installed..."
+if ! curl -fsS -H "Authorization: Bearer $KEY" "$BASE/v1/models" | grep -q "Kokoro-82M"; then
+  echo "FAIL: the realtime TTS model (speaches-ai/Kokoro-82M-v1.0-ONNX) is not" >&2
+  echo "      installed. Check PRELOAD_MODELS in docker-compose.yml and" >&2
+  echo "      'docker compose logs speaches'." >&2
+  exit 1
+fi
+echo "  ok"
+
+echo "Checking realtime endpoint accepts WebSocket upgrades (header auth)..."
+ws_nonce="dGhlIHNhbXBsZSBub25jZQ=="
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+  -H "Authorization: Bearer $KEY" \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: $ws_nonce" \
+  "$BASE/v1/realtime?model=verify-check" || true)
+if [[ "$code" != "101" ]]; then
+  echo "FAIL: expected 101 Switching Protocols from /v1/realtime, got ${code:-000}." >&2
+  echo "      Check 'docker compose logs caddy speaches'." >&2
+  exit 1
+fi
+echo "  ok"
+
+echo "Checking realtime browser auth (?api_key=)..."
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: $ws_nonce" \
+  "$BASE/v1/realtime?model=verify-check&api_key=$KEY" || true)
+if [[ "$code" != "101" ]]; then
+  echo "FAIL: expected 101 via query-param auth, got ${code:-000}." >&2
+  exit 1
+fi
+echo "  ok"
 
 echo "Checking TTS -> STT round-trip (synthesize a clip, then transcribe it)..."
 clip=$(mktemp)

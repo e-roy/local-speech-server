@@ -41,6 +41,7 @@ TTS is backed by [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI); STT
    │                                          │  /v1/audio/      │   │
    │                                          │   transcriptions,│   │
    │                                          │   translations   │   │
+   │                                          │ /v1/realtime (WS)│   │
    │                                          └────────┬─────────┘   │
    │                                                   ▼             │
    │                                          ┌──────────────────┐   │
@@ -154,7 +155,8 @@ See [docs/consumer-integration.md](docs/consumer-integration.md) for OpenAI-SDK 
 - [docs/consumer-integration.md](docs/consumer-integration.md) — how to call the service from client apps
 - [docs/operations.md](docs/operations.md) — key rotation, CORS origins, updates, backups
 - [docs/stt.md](docs/stt.md) — the speech-to-text subsystem: models, limits, design notes
-- [docs/llm.md](docs/llm.md) — the LLM subsystem (host-side Ollama): endpoint surface, models, failure behavior, realtime roadmap
+- [docs/llm.md](docs/llm.md) — the LLM subsystem (host-side Ollama): endpoint surface, models, failure behavior
+- [docs/realtime.md](docs/realtime.md) — realtime voice sessions over WebSocket: connection, auth, session defaults, limitations
 
 ## Troubleshooting
 

@@ -86,16 +86,10 @@ Operational setup (autostart at login, pulling models, keep-alive) lives in
 
 ## Roadmap
 
-- **Phase 2 — realtime conversation.** Speaches ships an OpenAI-style
-  `/v1/realtime` WebSocket API that orchestrates STT → LLM → TTS
-  server-side, with `CHAT_COMPLETION_BASE_URL` pointed at this same Ollama.
-  Known constraints in the pinned 0.9.0-rc.3: upstream docs say
-  realtime-grade latency needs CUDA (our speech engines are CPU-bound in
-  Docker — expect turn-based, not interruptible), `response.cancel` is
-  unsupported (no barge-in), it needs Speaches' own TTS model
-  (`speaches-ai/Kokoro-82M-v1.0-ONNX`) installed, and browser WebSocket
-  clients cannot send an `Authorization` header, so the Caddy auth matcher
-  needs a deliberate extension first.
+- **Phase 2 — realtime conversation: implemented.** `/v1/realtime`
+  (WebSocket, served by Speaches with `CHAT_COMPLETION_BASE_URL` pointed at
+  this same Ollama) orchestrates STT → LLM → TTS server-side. See
+  [realtime.md](realtime.md) for usage and limitations.
 - **Phase 3 — native speech engines.** If realtime latency matters enough,
   move STT/TTS to MLX on the host (e.g.
   [mlx-audio](https://github.com/Blaizzy/mlx-audio) serves both Whisper and
