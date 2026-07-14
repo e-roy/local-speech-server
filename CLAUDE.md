@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An ops/config repo, not an application. There is no compiled code, no test suite, and no linter. The artifacts are:
 
-- A 3-service `docker-compose.yml` (Kokoro-FastAPI + Caddy + cloudflared)
-- A Caddyfile that does auth + CORS + reverse proxy
+- A 4-service `docker-compose.yml` (Kokoro-FastAPI + Speaches + Caddy + cloudflared)
+- A Caddyfile that does auth + CORS + path-based reverse proxying
 - Bash scripts under `scripts/` for setup and verification
 - Operator documentation under `docs/`
 
@@ -48,15 +48,15 @@ docker compose up -d --force-recreate <service>
 
 ## Architecture
 
-Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/proxy) → Kokoro-FastAPI (`:8880`)**.
+Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/path routing) → Kokoro-FastAPI (`:8880`, `/v1/audio/speech` + `/v1/audio/voices`) or Speaches (`:8000`, `/v1/audio/transcriptions` + `/v1/audio/translations`)**. Authenticated requests to any other path get 404 — the published surface is deliberately smaller than what the backends expose.
 
-All three containers share the `speech` bridge network. The Cloudflare tunnel's public hostname must point at `caddy:8080` (the Docker service name) — not `localhost` or `host.docker.internal` — because cloudflared resolves it over the internal Docker network. This is the most common operator misconfiguration; preserve it when editing tunnel docs.
+All four containers share the `speech` bridge network. The Cloudflare tunnel's public hostname must point at `caddy:8080` (the Docker service name) — not `localhost` or `host.docker.internal` — because cloudflared resolves it over the internal Docker network. This is the most common operator misconfiguration; preserve it when editing tunnel docs.
 
 Caddy is the only piece doing policy. Authentication is a regex match on a pipe-separated `${API_KEYS}` env var inlined into the Caddyfile (`^Bearer ({$API_KEYS})$`). CORS uses the same pattern: `${ALLOWED_ORIGINS}` is a pipe-separated allowlist inlined into a `header_regexp` matcher (`^({$ALLOWED_ORIGINS})$`); when the request's `Origin` matches, Caddy echoes it back as `Access-Control-Allow-Origin`. Note that pipes are regex alternation, so a literal `.` in an origin is technically a wildcard — fine for typical subdomain allowlists; document `\.` escaping if a stricter setup ever matters.
 
-Kokoro-FastAPI is upstream code we do not touch — it already speaks the OpenAI Audio API (`/v1/audio/speech`, `/v1/audio/voices`). Models persist in the `kokoro_models` named volume; first-run download is slow (minutes) and operators frequently mistake it for a hang.
+Kokoro-FastAPI and Speaches are upstream code we do not touch — both speak the OpenAI Audio API. Speaches is version-pinned (`0.9.0-rc.3-cpu`; the 0.9 line is required for `PRELOAD_MODELS`) and only serves models named in `PRELOAD_MODELS` — nothing downloads at request time. Models persist in the `kokoro_models` and `speaches_models` named volumes; first-run downloads are slow (minutes) and operators frequently mistake them for a hang.
 
-State: the only stateful thing in the stack is `kokoro_models` (and a future `speaches_models` if STT is added). The Cloudflare tunnel config lives in the Cloudflare dashboard, not in this repo. The tunnel token in `.env` is the only secret that needs backing up alongside the volume.
+State: the only stateful things in the stack are the two model volumes. The Cloudflare tunnel config lives in the Cloudflare dashboard, not in this repo. The tunnel token in `.env` is the only secret that needs backing up alongside the volumes.
 
 ## Conventions worth preserving
 
@@ -68,4 +68,4 @@ State: the only stateful thing in the stack is `kokoro_models` (and a future `sp
 
 ## Extending the stack
 
-The STT extension path is fully spec'd in [docs/adding-stt.md](docs/adding-stt.md): add a Speaches service, replace the single `reverse_proxy kokoro:8880` in the Caddyfile's `@authed` block with path-based routing for `/v1/audio/speech*`, `/v1/audio/transcriptions*`, and `/v1/audio/voices*`. Follow that doc rather than improvising — it preserves the auth/CORS surface and the OpenAI-SDK compatibility the consumer integration depends on.
+STT is implemented — [docs/stt.md](docs/stt.md) documents the subsystem (model management, size/timeout limits, design rationale) and the remaining extension paths: Speaches' `/v1/realtime` WebSocket API, swapping the STT upstream for a native Metal engine on the host (`host.docker.internal`), or additional TTS engines routed by path. When touching the routing surface, preserve the auth/CORS layering in Caddy and the OpenAI-SDK compatibility the consumer integration depends on; consumers depend on the API shape, never on which engine serves it.

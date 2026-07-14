@@ -12,6 +12,29 @@ services:
     networks:
       - speech
 
+  speaches:
+    # Pinned: PRELOAD_MODELS and the model-registry workflow need the 0.9
+    # line (0.8.x used a different config surface). Bump to 0.9.0 final when
+    # released. The -cpu image is multi-arch (native linux/arm64).
+    image: ghcr.io/speaches-ai/speaches:0.9.0-rc.3-cpu
+    container_name: speech-speaches
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - speaches_models:/home/ubuntu/.cache/huggingface/hub
+    environment:
+      # JSON array of model IDs downloaded at startup if missing. Models not
+      # in this list 404 at request time — see docs/stt.md to change models.
+      - 'PRELOAD_MODELS=["Systran/faster-distil-whisper-small.en"]'
+      # int8 quantization is the standard speed/quality trade-off on CPU.
+      - WHISPER__COMPUTE_TYPE=int8
+      - LOG_LEVEL=info
+      # Gradio UI is unreachable behind Caddy; disabling saves memory.
+      - ENABLE_UI=false
+    networks:
+      - speech
+
   caddy:
     image: caddy:2-alpine
     container_name: speech-caddy
@@ -26,6 +49,7 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
     depends_on:
       - kokoro
+      - speaches
     networks:
       - speech
 
@@ -45,3 +69,4 @@ networks:
 
 volumes:
   kokoro_models:
+  speaches_models:

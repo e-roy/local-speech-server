@@ -52,14 +52,50 @@
         header @allowedOrigin Access-Control-Allow-Origin "{http.request.header.Origin}"
         header Vary "Origin"
 
-        reverse_proxy kokoro:8880 {
-            header_down -Access-Control-Allow-Origin
-            header_down -Access-Control-Allow-Methods
-            header_down -Access-Control-Allow-Headers
-            header_down -Access-Control-Max-Age
-            header_down -Access-Control-Allow-Credentials
-            header_down -Vary
-            flush_interval -1
+        # TTS + voice listing — Kokoro-FastAPI. (Speaches exposes its own
+        # /v1/audio/voices for its TTS side; routing the path here shadows
+        # it deliberately — Kokoro is the TTS engine.)
+        @kokoro path /v1/audio/speech* /v1/audio/voices*
+        handle @kokoro {
+            reverse_proxy kokoro:8880 {
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Max-Age
+                header_down -Access-Control-Allow-Credentials
+                header_down -Vary
+                flush_interval -1
+            }
+        }
+
+        # STT — Speaches. request_body is a standalone directive (it is NOT
+        # valid inside reverse_proxy); the cap matches Cloudflare's own
+        # 100 MB request-body limit on Free/Pro plans. Beyond it Caddy
+        # answers 413.
+        @stt path /v1/audio/transcriptions* /v1/audio/translations*
+        handle @stt {
+            request_body {
+                max_size 100MB
+            }
+            reverse_proxy speaches:8000 {
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Max-Age
+                header_down -Access-Control-Allow-Credentials
+                header_down -Vary
+                # Unbuffered so stream=true SSE transcripts flow as produced;
+                # harmless for plain JSON responses.
+                flush_interval -1
+            }
+        }
+
+        # Anything else, even with a valid key, is not part of the service
+        # surface (backends expose more routes than we publish).
+        handle {
+            respond "Not found" 404 {
+                close
+            }
         }
     }
 

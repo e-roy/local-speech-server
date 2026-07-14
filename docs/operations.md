@@ -11,7 +11,7 @@ These system settings make the stack survive reboots, power blips, and being lef
 3. **Wake for network access.** System Settings → Energy → "Wake for network access" → on.
 4. **Auto-restart after power failure.** System Settings → Energy → "Start up automatically after a power failure" → on.
 5. **Docker Desktop autostart.** Docker Desktop → Settings → General → "Start Docker Desktop when you log in" → on. Also turn off "Open Docker Dashboard at startup" (no need for the GUI).
-6. **Docker Desktop resources.** Docker Desktop → Settings → Resources → CPUs ≥ 4, Memory ≥ 4 GB. Kokoro-CPU is light, but headroom helps.
+6. **Docker Desktop resources.** Docker Desktop → Settings → Resources → CPUs ≥ 4, Memory ≥ 6 GB. Kokoro-CPU is light; the STT model adds roughly a gigabyte while loaded — headroom helps.
 7. **Container restart policy.** Already set to `restart: unless-stopped` in `docker-compose.yml`. Containers come back automatically when Docker Desktop comes back.
 
 Verify: reboot, wait ~60 seconds, and from a different machine run
@@ -71,6 +71,40 @@ docker compose up -d --force-recreate kokoro
 
 The model cache survives because of the named `kokoro_models` volume. If the new image changes the internal model directory path, update the volume mount in `docker-compose.yml` accordingly.
 
+## Updating Speaches
+
+Unlike the other images, Speaches is version-pinned in `docker-compose.yml`
+(the 0.9 line is required for `PRELOAD_MODELS`; bump the `0.9.0-rc.3-cpu` tag
+to `0.9.0` final when released). Edit the tag, then:
+
+```bash
+docker compose pull speaches
+docker compose up -d --force-recreate speaches
+```
+
+The model cache survives in the `speaches_models` named volume.
+
+## Changing the STT model
+
+1. Edit `PRELOAD_MODELS` in `docker-compose.yml` — a JSON array of Hugging
+   Face repo IDs; see [stt.md](stt.md) for sensible choices. Only listed
+   models can be used; nothing downloads at request time.
+2. Recreate the service; missing models download on startup:
+   ```bash
+   docker compose up -d --force-recreate speaches
+   docker compose logs -f speaches   # watch the download
+   ```
+3. Roll the new model ID out to consumers (it is their `model` parameter).
+
+Old models stay on disk until removed. To list or delete downloaded models —
+the management API is deliberately not exposed through Caddy, so run it on
+the Docker network:
+
+```bash
+docker compose exec speaches curl -s http://localhost:8000/v1/models
+docker compose exec speaches curl -s -X DELETE "http://localhost:8000/v1/models/<model-id>"
+```
+
 ## Updating cloudflared
 
 ```bash
@@ -80,14 +114,22 @@ docker compose up -d --force-recreate cloudflared
 
 ## Backups
 
-The only stateful thing is the model cache. To back it up:
+The only stateful things are the two model caches. To back them up:
 
 ```bash
 docker run --rm \
   -v local-speech-server_kokoro_models:/data \
   -v "$(pwd)":/backup \
   alpine tar czf /backup/kokoro_models.tar.gz -C /data .
+
+docker run --rm \
+  -v local-speech-server_speaches_models:/data \
+  -v "$(pwd)":/backup \
+  alpine tar czf /backup/speaches_models.tar.gz -C /data .
 ```
+
+(Both caches are also re-downloadable — a backup only saves bandwidth and
+first-start time.)
 
 (The volume name is `<compose-project>_<volume>`; `local-speech-server` is the compose project name, taken from the directory name.)
 
@@ -99,6 +141,7 @@ The only other secret is the Cloudflare Tunnel token in `.env`. The tunnel confi
 docker compose logs -f              # all services
 docker compose logs caddy           # auth / reverse proxy
 docker compose logs kokoro          # synthesis / model loading
+docker compose logs speaches        # transcription / STT model downloads
 docker compose logs cloudflared     # tunnel registration / disconnects
 ```
 
@@ -118,3 +161,7 @@ docker volume rm local-speech-server_kokoro_models
 docker compose up -d
 # Next start will re-download the model.
 ```
+
+Same procedure for the STT cache with
+`docker volume rm local-speech-server_speaches_models` — preloaded models
+re-download on the next start.

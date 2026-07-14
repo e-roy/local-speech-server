@@ -1,8 +1,8 @@
 # local-speech-server
 
-A self-hostable voice-services appliance that exposes **OpenAI-compatible HTTP endpoints** for text-to-speech on your own hardware, reachable from anywhere via a Cloudflare Tunnel. It is designed to run on a single always-on machine (target: Apple Silicon Mac Mini) on a personal LAN, and be consumed by your own client applications by simply pointing `OPENAI_BASE_URL` at it with a bearer-token API key.
+A self-hostable voice-services appliance that exposes **OpenAI-compatible HTTP endpoints** for text-to-speech and speech-to-text on your own hardware, reachable from anywhere via a Cloudflare Tunnel. It is designed to run on a single always-on machine (target: Apple Silicon Mac Mini) on a personal LAN, and be consumed by your own client applications by simply pointing `OPENAI_BASE_URL` at it with a bearer-token API key.
 
-**v1 scope: TTS only**, backed by [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI). STT is a documented, additive future extension — see [docs/adding-stt.md](docs/adding-stt.md).
+TTS is backed by [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI); STT by [Speaches](https://github.com/speaches-ai/speaches) running faster-whisper — see [docs/stt.md](docs/stt.md) for models, limits, and design notes.
 
 ## Architecture
 
@@ -26,23 +26,31 @@ A self-hostable voice-services appliance that exposes **OpenAI-compatible HTTP e
    │                                                                 │
    │  ┌────────────────┐    ┌────────────┐    ┌──────────────────┐   │
    │  │ cloudflared    │───►│   Caddy    │───►│  Kokoro-FastAPI  │   │
-   │  │ (Docker)       │    │ (Docker)   │    │  (Docker)        │   │
-   │  │ listens for    │    │ :8080      │    │  :8880           │   │
-   │  │ tunnel traffic │    │ - auth     │    │  /v1/audio/*     │   │
-   │  │                │    │ - CORS     │    │                  │   │
-   │  │                │    │ - reverse  │    │                  │   │
-   │  │                │    │   proxy    │    │                  │   │
-   │  └────────────────┘    └────────────┘    └──────────────────┘   │
-   │                                                  │              │
-   │                                                  ▼              │
-   │                                        ┌──────────────────┐     │
-   │                                        │ named volume:    │     │
-   │                                        │ kokoro_models    │     │
-   │                                        └──────────────────┘     │
+   │  │ (Docker)       │    │ (Docker)   │TTS │  (Docker) :8880  │   │
+   │  │ listens for    │    │ :8080      │    │  /v1/audio/      │   │
+   │  │ tunnel traffic │    │ - auth     │    │    speech,voices │   │
+   │  │                │    │ - CORS     │    └────────┬─────────┘   │
+   │  │                │    │ - path     │             ▼             │
+   │  │                │    │   routing  │    ┌──────────────────┐   │
+   │  └────────────────┘    │            │    │ volume:          │   │
+   │                        │            │    │ kokoro_models    │   │
+   │                        │            │    └──────────────────┘   │
+   │                        │            │    ┌──────────────────┐   │
+   │                        │            │───►│  Speaches (STT)  │   │
+   │                        └────────────┘STT │  (Docker) :8000  │   │
+   │                                          │  /v1/audio/      │   │
+   │                                          │   transcriptions,│   │
+   │                                          │   translations   │   │
+   │                                          └────────┬─────────┘   │
+   │                                                   ▼             │
+   │                                          ┌──────────────────┐   │
+   │                                          │ volume:          │   │
+   │                                          │ speaches_models  │   │
+   │                                          └──────────────────┘   │
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-Cloudflare's edge terminates TLS with a browser-trusted cert; traffic flows through a persistent tunnel to `cloudflared` on the Mac Mini, which forwards to Caddy over the Docker network. Caddy enforces bearer-token auth and CORS, then reverse-proxies to Kokoro-FastAPI.
+Cloudflare's edge terminates TLS with a browser-trusted cert; traffic flows through a persistent tunnel to `cloudflared` on the Mac Mini, which forwards to Caddy over the Docker network. Caddy enforces bearer-token auth and CORS, then routes by path: speech synthesis and voice listing to Kokoro-FastAPI, transcription and translation to Speaches.
 
 ## Prerequisites
 
@@ -74,8 +82,8 @@ Bring everything up except the tunnel, with Caddy exposed on `127.0.0.1:8080`:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.smoke.yml up -d
-docker compose logs -f kokoro
-# Wait for the model to load (first run downloads — several minutes).
+docker compose logs -f kokoro speaches
+# Wait for the models to load (first run downloads both — several minutes).
 ```
 
 Smoke-test:
@@ -134,13 +142,13 @@ See [docs/operations.md](docs/operations.md) — "First-time Mac Mini setup" —
 
 ## Consuming the service
 
-See [docs/consumer-integration.md](docs/consumer-integration.md) for OpenAI-SDK and `fetch()` examples. Visit `https://speech.example.com/voices` to audition installed voices.
+See [docs/consumer-integration.md](docs/consumer-integration.md) for OpenAI-SDK and `fetch()` examples covering both speech synthesis and transcription. Visit `https://speech.example.com/voices` to audition installed voices.
 
 ## Further reading
 
 - [docs/consumer-integration.md](docs/consumer-integration.md) — how to call the service from client apps
 - [docs/operations.md](docs/operations.md) — key rotation, CORS origins, updates, backups
-- [docs/adding-stt.md](docs/adding-stt.md) — how to extend the service with speech-to-text
+- [docs/stt.md](docs/stt.md) — the speech-to-text subsystem: models, limits, design notes
 
 ## Troubleshooting
 
@@ -150,3 +158,5 @@ When something looks off, start with `./scripts/verify-stack.sh smoke` (or `./sc
 - **502 from Cloudflare.** The tunnel is up but cannot reach Caddy. Check that the public hostname's URL is `caddy:8080` (not `localhost:8080`) and that all three containers are `Up` (`docker compose ps`).
 - **401 from Caddy.** Either the bearer token is wrong, or the `API_KEYS` env var did not get substituted into the Caddyfile. Check `docker compose config` to confirm the env var expanded, and `docker compose logs caddy` for auth-related log lines.
 - **Model not loading / Kokoro keeps restarting.** Check `docker compose logs kokoro`. First-run model download is slow; subsequent runs reuse the `kokoro_models` named volume. If the image's internal model directory has moved between versions, update the `kokoro_models` mount path in `docker-compose.yml` per the upstream Kokoro-FastAPI README.
+- **Transcription fails with a model error.** The request's `model` field must name a model listed in `PRELOAD_MODELS` in `docker-compose.yml` — models are not downloaded on demand. Edit the list and `docker compose up -d --force-recreate speaches`. See [docs/stt.md](docs/stt.md).
+- **First transcription after a quiet period is slow.** The STT model unloads after 5 idle minutes and reloads on the next request (a few seconds). This is expected; see [docs/stt.md](docs/stt.md) to tune it.

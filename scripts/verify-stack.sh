@@ -14,8 +14,12 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-# shellcheck disable=SC1091
-set -a; source .env; set +a
+# Read values verbatim rather than sourcing: API_KEYS and ALLOWED_ORIGINS
+# legitimately contain '|', which 'source' would parse as a shell pipeline
+# (and try to execute the second key as a command).
+API_KEYS=$(sed -n 's/^API_KEYS=//p' .env | head -1)
+ALLOWED_ORIGINS=$(sed -n 's/^ALLOWED_ORIGINS=//p' .env | head -1)
+SPEECH_BASE="${SPEECH_BASE:-$(sed -n 's/^SPEECH_BASE=//p' .env | head -1)}"
 
 KEY="${API_KEYS%%|*}"  # take first key from pipe-separated list
 if [[ -z "$KEY" || "$KEY" == CHANGEME_* ]]; then
@@ -38,7 +42,7 @@ else
 fi
 
 echo "Checking containers are up..."
-for svc in caddy kokoro; do
+for svc in caddy kokoro speaches; do
   state=$(docker compose ps --format json "$svc" 2>/dev/null | grep -o '"State":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
   if [[ "$state" != "running" ]]; then
     echo "FAIL: container '$svc' is not running (state: ${state:-missing})." >&2
@@ -52,6 +56,15 @@ if ! docker compose exec -T kokoro sh -c 'ls /app/api/src/models 2>/dev/null | g
   echo "FAIL: /app/api/src/models is empty. Either the first-run download is" >&2
   echo "      still in progress, or the upstream image moved the model dir." >&2
   echo "      Check 'docker compose logs kokoro' and the Kokoro-FastAPI README." >&2
+  exit 1
+fi
+echo "  ok"
+
+echo "Checking Speaches (STT) model cache..."
+if ! docker compose exec -T speaches sh -c 'ls /home/ubuntu/.cache/huggingface/hub 2>/dev/null | grep -q .' ; then
+  echo "FAIL: the Speaches model cache is empty. Either the startup download" >&2
+  echo "      (PRELOAD_MODELS in docker-compose.yml) is still in progress, or" >&2
+  echo "      it failed. Check 'docker compose logs speaches'." >&2
   exit 1
 fi
 echo "  ok"
@@ -71,6 +84,31 @@ if [[ "$n" -lt 1 ]]; then
   exit 1
 fi
 echo "  ok ($n voices installed)"
+
+echo "Checking TTS -> STT round-trip (synthesize a clip, then transcribe it)..."
+# Use the first preloaded model from docker-compose.yml unless overridden.
+STT_MODEL="${STT_MODEL:-$(docker compose config 2>/dev/null | sed -n 's/.*PRELOAD_MODELS[=:][^[]*\["\([^"]*\)".*/\1/p' | head -1)}"
+STT_MODEL="${STT_MODEL:-Systran/faster-distil-whisper-small.en}"
+clip=$(mktemp)
+trap 'rm -f "$clip"' EXIT
+if ! curl -fsS -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"kokoro","voice":"af_bella","input":"stack verification test","response_format":"wav"}' \
+  -o "$clip" "$BASE/v1/audio/speech"; then
+  echo "FAIL: TTS synthesis request failed. Check 'docker compose logs kokoro'." >&2
+  exit 1
+fi
+transcript=$(curl -fsS -H "Authorization: Bearer $KEY" \
+  -F "file=@$clip;filename=check.wav;type=audio/wav" \
+  -F "model=$STT_MODEL" \
+  "$BASE/v1/audio/transcriptions" || true)
+if ! grep -qi "verification" <<<"$transcript"; then
+  echo "FAIL: transcription of a synthesized clip did not contain 'verification'." >&2
+  echo "      Response: ${transcript:-<empty>}" >&2
+  echo "      If the model is still loading (first request after a restart is" >&2
+  echo "      slow), re-run. Otherwise check 'docker compose logs speaches'." >&2
+  exit 1
+fi
+echo "  ok (model: $STT_MODEL)"
 
 echo
 echo "Stack healthy."

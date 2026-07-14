@@ -5,8 +5,10 @@ This service speaks the [OpenAI Audio API](https://platform.openai.com/docs/api-
 ## Endpoint
 
 ```
-https://speech.example.com/v1/audio/speech
-https://speech.example.com/v1/audio/voices
+https://speech.example.com/v1/audio/speech           # TTS
+https://speech.example.com/v1/audio/voices           # TTS voice listing
+https://speech.example.com/v1/audio/transcriptions   # STT
+https://speech.example.com/v1/audio/translations     # STT → English
 ```
 
 Replace `speech.example.com` with the subdomain the operator chose.
@@ -62,6 +64,50 @@ new Audio(URL.createObjectURL(blob)).play();
 ```
 
 > Only browsers loaded from an origin in the operator's `ALLOWED_ORIGINS` allowlist can call this from JS. For a different origin (e.g. a new app or a localhost dev server), ask the operator to add it to `ALLOWED_ORIGINS` and restart Caddy — see [operations.md](operations.md).
+
+## Speech-to-text (transcription)
+
+### Using the OpenAI Node SDK
+
+```ts
+import fs from "node:fs";
+
+const transcript = await client.audio.transcriptions.create({
+  file: fs.createReadStream("clip.wav"),
+  model: "Systran/faster-distil-whisper-small.en",
+});
+console.log(transcript.text);
+```
+
+### Using `fetch()` from a browser
+
+```ts
+// `blob` is recorded audio, e.g. from MediaRecorder.
+const form = new FormData();
+form.append("file", blob, "clip.webm");
+form.append("model", "Systran/faster-distil-whisper-small.en");
+
+const res = await fetch("https://speech.example.com/v1/audio/transcriptions", {
+  method: "POST",
+  headers: { "Authorization": `Bearer ${SPEECH_API_KEY}` },
+  body: form, // the browser sets the multipart Content-Type itself
+});
+const { text } = await res.json();
+```
+
+Notes:
+
+- The `model` value is a Hugging Face repo ID — there is no `whisper-1`
+  alias. It must be one of the models the operator preloaded (the default
+  install ships `Systran/faster-distil-whisper-small.en`, English-only).
+  Ask the operator, or see `PRELOAD_MODELS` in `docker-compose.yml`.
+- `response_format` accepts `json` (default), `verbose_json`, `text`, `srt`,
+  `vtt`. Pass `stream: true` to receive the transcript incrementally via
+  server-sent events.
+- Uploads are capped at 100 MB, and a single request should finish within
+  ~100 s (Cloudflare's response timeout) — for long recordings use
+  `stream=true` or split the audio client-side. Details in [stt.md](stt.md).
+- `/v1/audio/translations` takes the same fields and returns English text.
 
 ## Voices
 
