@@ -73,6 +73,23 @@ if ! docker compose exec -T speaches sh -c 'ls /home/ubuntu/.cache/huggingface/h
 fi
 echo "  ok"
 
+echo "Checking $BASE is reachable and is this service..."
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/voices" || true)
+if [[ "$code" == "000" ]]; then
+  echo "FAIL: cannot connect to $BASE at all (DNS or TLS failed before any" >&2
+  echo "      request reached the service). Check that the domain's" >&2
+  echo "      nameservers still point at Cloudflare and the tunnel's public" >&2
+  echo "      hostname exists: 'nslookup <host>' should return Cloudflare" >&2
+  echo "      IPs, and the tunnel should show Healthy in the dashboard." >&2
+  exit 1
+elif [[ "$code" != "200" ]]; then
+  echo "FAIL: $BASE answered, but /voices returned $code instead of 200 —" >&2
+  echo "      that URL may not be this speech service (wrong SPEECH_BASE," >&2
+  echo "      or DNS for the hostname points somewhere else)." >&2
+  exit 1
+fi
+echo "  ok"
+
 echo "Checking auth rejects an unknown key..."
 code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer not-a-real-key" "$BASE/v1/audio/voices" || true)
 if [[ "$code" != "401" ]]; then
