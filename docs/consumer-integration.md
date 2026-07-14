@@ -63,7 +63,7 @@ const blob = await res.blob();
 new Audio(URL.createObjectURL(blob)).play();
 ```
 
-> Only browsers loaded from an origin in the operator's `ALLOWED_ORIGINS` allowlist can call this from JS. For a different origin (e.g. a new app or a localhost dev server), ask the operator to add it to `ALLOWED_ORIGINS` and restart Caddy — see [operations.md](operations.md).
+> Only browsers loaded from an origin in the operator's `ALLOWED_ORIGINS` allowlist can call this from JS. For a different origin (e.g. a new app or a localhost dev server), ask the operator to add it to `ALLOWED_ORIGINS` and re-apply the config — see [operations.md](operations.md).
 
 ## Speech-to-text (transcription)
 

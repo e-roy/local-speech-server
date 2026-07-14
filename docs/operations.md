@@ -34,12 +34,14 @@ Rotate a compromised or stale key without downtime:
    ```
    API_KEYS=old-key|new-key
    ```
-3. Restart Caddy so it picks up the new env:
+3. Re-create Caddy so it picks up the new env — note this must be `up -d`,
+   not `restart`; a plain restart reuses the container's original
+   environment and would silently keep the old keys:
    ```bash
-   docker compose restart caddy
+   docker compose up -d caddy
    ```
 4. Roll the new key out to consumers.
-5. Once all consumers are migrated, remove the old key from `.env` and restart Caddy again.
+5. Once all consumers are migrated, remove the old key from `.env` and run `docker compose up -d caddy` again.
 
 ## CORS origins
 
@@ -54,8 +56,12 @@ The Caddyfile inlines the value directly into a regex matcher (`^({$ALLOWED_ORIG
 After editing:
 
 ```bash
-docker compose restart caddy
+docker compose up -d caddy
 ```
+
+(`up -d` re-creates the container because its environment changed. A plain
+`docker compose restart` does **not** re-read `.env` — the container keeps
+the environment it was created with.)
 
 Notes:
 

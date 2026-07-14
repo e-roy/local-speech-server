@@ -16,10 +16,14 @@ fi
 
 # Read values verbatim rather than sourcing: API_KEYS and ALLOWED_ORIGINS
 # legitimately contain '|', which 'source' would parse as a shell pipeline
-# (and try to execute the second key as a command).
-API_KEYS=$(sed -n 's/^API_KEYS=//p' .env | head -1)
-ALLOWED_ORIGINS=$(sed -n 's/^ALLOWED_ORIGINS=//p' .env | head -1)
-SPEECH_BASE="${SPEECH_BASE:-$(sed -n 's/^SPEECH_BASE=//p' .env | head -1)}"
+# (and try to execute the second key as a command). Tolerate optional
+# surrounding quotes, which compose and bash would both strip.
+env_val() {
+  sed -n "s/^${1}=//p" .env | head -1 | sed "s/^[\"']//; s/[\"']\$//"
+}
+API_KEYS=$(env_val API_KEYS)
+ALLOWED_ORIGINS=$(env_val ALLOWED_ORIGINS)
+SPEECH_BASE="${SPEECH_BASE:-$(env_val SPEECH_BASE)}"
 
 KEY="${API_KEYS%%|*}"  # take first key from pipe-separated list
 if [[ -z "$KEY" || "$KEY" == CHANGEME_* ]]; then

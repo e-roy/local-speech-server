@@ -34,10 +34,16 @@ Setup and verification:
 ./scripts/verify-stack.sh              # post-bringup checks against $SPEECH_BASE (or first entry in ALLOWED_ORIGINS)
 ```
 
-After editing the Caddyfile or `.env`:
+After editing the Caddyfile (bind-mounted, re-read on restart):
 
 ```bash
 docker compose restart caddy
+```
+
+After editing `.env`: `restart` does **not** re-read environment values — re-create instead:
+
+```bash
+docker compose up -d caddy
 ```
 
 After editing `docker-compose.yml` for an existing service:
