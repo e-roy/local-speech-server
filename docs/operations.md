@@ -137,57 +137,34 @@ Ollama running natively on the Mac (for GPU access; see
 
 Transcriptions are served by mlx-audio running natively on the Mac (GPU via
 MLX) — like Ollama, a host dependency outside `docker compose`, fronted by
-Caddy at `host.docker.internal:8001`. One-time setup:
+Caddy at `host.docker.internal:8001`. Setup is one command, run **on the
+Mac host** from the repo:
 
 ```bash
-mkdir -p ~/mlx-audio && cd ~/mlx-audio
-python3 -m venv .venv                # needs Python 3.10+ (Xcode CLT or brew)
-.venv/bin/pip install mlx-audio
-# foreground smoke test, then Ctrl-C:
-.venv/bin/python -m mlx_audio.server --host 127.0.0.1 --port 8001
-```
-
-Then install the LaunchAgent so it survives reboots (replace `USERNAME`):
-
-```xml
-<!-- ~/Library/LaunchAgents/com.local-speech.mlx-audio.plist -->
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>com.local-speech.mlx-audio</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/USERNAME/mlx-audio/.venv/bin/python</string>
-        <string>-m</string><string>mlx_audio.server</string>
-        <string>--host</string><string>127.0.0.1</string>
-        <string>--port</string><string>8001</string>
-    </array>
-    <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
-    <key>StandardOutPath</key><string>/tmp/mlx-audio.log</string>
-    <key>StandardErrorPath</key><string>/tmp/mlx-audio.log</string>
-</dict>
-</plist>
-```
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.local-speech.mlx-audio.plist
-launchctl list | grep mlx-audio      # should show the label
-
-# pre-warm: the first request downloads the model from Hugging Face
-curl -s http://127.0.0.1:8001/v1/audio/transcriptions \
-  -F file=@clip.wav -F model=mlx-community/whisper-large-v3-turbo-asr-fp16
-
+./scripts/setup-stt-engine.sh
 ./scripts/verify-stack.sh            # STT engine check + round-trip must pass
 ```
+
+The script is idempotent (safe to re-run over a partial install) and is
+also the **update path** — re-running upgrades mlx-audio and restarts the
+service. It:
+
+1. checks Apple Silicon + Python 3.10+ (`xcode-select --install` or
+   `brew install python` if missing),
+2. creates/reuses a venv at `~/mlx-audio/.venv` and installs
+   `mlx-audio[server,stt]` (the extras matter — the base package has no
+   web server),
+3. writes and (re)loads the `com.local-speech.mlx-audio` LaunchAgent
+   (`RunAtLoad` + `KeepAlive` → reboot-safe, auto-restart),
+4. waits for the server on `127.0.0.1:8001`, then pre-warms the model
+   from `STT_MODEL` in `.env` (first run downloads it — minutes).
 
 Notes:
 
 - Bound to `127.0.0.1` deliberately — reachable from the containers via
   `host.docker.internal`, invisible to the LAN; Caddy remains the only door.
-- Logs: `tail -f /tmp/mlx-audio.log`. Update: `.venv/bin/pip install -U
-  mlx-audio`, then `launchctl kickstart -k gui/$(id -u)/com.local-speech.mlx-audio`.
+- Logs: `tail -f /tmp/mlx-audio.log`. Service status:
+  `launchctl list | grep mlx-audio`.
 - **When it's down:** transcriptions fail fast with an OpenAI-style JSON
   502 and `verify-stack.sh` FAILs with a pointed message (unlike the LLM,
   STT is a core capability). Emergency rollback to the CPU engine: in

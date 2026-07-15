@@ -139,7 +139,19 @@ curl -fsS -H "Authorization: Bearer $KEY" https://speech.example.com/v1/audio/vo
 
 See [docs/operations.md](docs/operations.md) — "First-time Mac Mini setup" — for the handful of system-settings toggles that make the stack survive reboots and power blips.
 
-### 5. Verify
+### 5. Host engines (the GPU path)
+
+Two engines run natively on the Mac rather than in Docker, because that is
+the only way they get the GPU:
+
+```bash
+./scripts/setup-stt-engine.sh     # STT (mlx-audio) — venv, LaunchAgent, model pre-warm
+```
+
+For the optional LLM, install [Ollama](https://ollama.com), enable
+"Start at login", and `ollama pull` a model — see [docs/llm.md](docs/llm.md).
+
+### 6. Verify
 
 ```bash
 ./scripts/verify-stack.sh smoke    # if you smoke-tested without the tunnel

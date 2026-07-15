@@ -30,6 +30,7 @@ Setup and verification:
 ```bash
 ./scripts/init-env.sh                  # one-time: prompts for ALLOWED_ORIGINS, generates two API keys, writes .env
 ./scripts/generate-key.sh              # print a fresh 32-char URL-safe key
+./scripts/setup-stt-engine.sh          # on the Mac host: install/update the mlx-audio STT engine (venv + LaunchAgent + pre-warm)
 ./scripts/verify-stack.sh smoke        # post-bringup checks against http://localhost:8080
 ./scripts/verify-stack.sh              # post-bringup checks against $SPEECH_BASE (or first entry in ALLOWED_ORIGINS)
 ```
