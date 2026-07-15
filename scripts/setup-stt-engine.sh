@@ -57,6 +57,8 @@ fi
 echo "  ok"
 
 echo "Writing the LaunchAgent ($PLIST)..."
+# WorkingDirectory matters: the server creates a relative logs/ dir in its
+# cwd, and launchd's default cwd is / — read-only on modern macOS.
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -71,6 +73,7 @@ cat > "$PLIST" <<EOF
         <string>--host</string><string>127.0.0.1</string>
         <string>--port</string><string>$PORT</string>
     </array>
+    <key>WorkingDirectory</key><string>$ENGINE_DIR</string>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
     <key>StandardOutPath</key><string>$LOG</string>
@@ -89,8 +92,8 @@ echo "Waiting for the server to answer on 127.0.0.1:$PORT..."
 n=0
 until code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 -X POST "http://127.0.0.1:$PORT/v1/audio/transcriptions" 2>/dev/null) && [[ "$code" != "000" ]]; do
   n=$((n+1))
-  if [[ $n -gt 30 ]]; then
-    echo "FAIL: the server did not come up within 60s. Check $LOG" >&2
+  if [[ $n -gt 60 ]]; then
+    echo "FAIL: the server did not come up within 120s. Check $LOG" >&2
     exit 1
   fi
   sleep 2
