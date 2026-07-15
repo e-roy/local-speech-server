@@ -106,18 +106,17 @@ if [[ "$n" -lt 1 ]]; then
 fi
 echo "  ok ($n voices installed)"
 
-# STT model: env override, then .env, then the stack default. Served by the
-# host-side mlx-audio engine — see docs/stt.md.
+# STT model: env override, then .env, then the stack default (the CPU
+# engine's model while the GPU path is on hold — see docs/stt.md).
 STT_MODEL="${STT_MODEL:-$(env_val STT_MODEL)}"
-STT_MODEL="${STT_MODEL:-mlx-community/whisper-large-v3-turbo-asr-fp16}"
+STT_MODEL="${STT_MODEL:-Systran/faster-distil-whisper-small.en}"
 
-echo "Checking STT engine (mlx-audio on the host)..."
+echo "Checking the STT route answers..."
 stt_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -X POST -H "Authorization: Bearer $KEY" "$BASE/v1/audio/transcriptions" || true)
 if [[ "$stt_code" == "502" || "$stt_code" == "000" || -z "$stt_code" ]]; then
-  echo "FAIL: the STT engine is not reachable (got ${stt_code:-000}). Check the" >&2
-  echo "      mlx-audio service on the host ('launchctl list | grep mlx-audio')" >&2
-  echo "      and docs/operations.md. Emergency rollback: point the Caddyfile" >&2
-  echo "      @stt route back at speaches:8000 and restart caddy." >&2
+  echo "FAIL: the STT engine is not reachable (got ${stt_code:-000})." >&2
+  echo "      Check 'docker compose logs speaches' (or, if the GPU engine is" >&2
+  echo "      routed, the mlx-audio service — see docs/operations.md)." >&2
   exit 1
 fi
 echo "  ok (engine answered $stt_code to an empty request)"

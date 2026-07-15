@@ -74,7 +74,7 @@ import fs from "node:fs";
 
 const transcript = await client.audio.transcriptions.create({
   file: fs.createReadStream("clip.wav"),
-  model: "mlx-community/whisper-large-v3-turbo-asr-fp16",
+  model: "Systran/faster-distil-whisper-small.en",
 });
 console.log(transcript.text);
 ```
@@ -85,7 +85,7 @@ console.log(transcript.text);
 // `blob` is recorded audio, e.g. from MediaRecorder.
 const form = new FormData();
 form.append("file", blob, "clip.webm");
-form.append("model", "mlx-community/whisper-large-v3-turbo-asr-fp16");
+form.append("model", "Systran/faster-distil-whisper-small.en");
 
 const res = await fetch("https://speech.example.com/v1/audio/transcriptions", {
   method: "POST",
@@ -98,10 +98,10 @@ const { text } = await res.json();
 Notes:
 
 - The `model` value is a Hugging Face repo ID — there is no `whisper-1`
-  alias. The default install serves
-  `mlx-community/whisper-large-v3-turbo-asr-fp16` (multilingual, GPU);
-  the operator's `STT_MODEL` in `.env` is the source of truth. Treat it as
-  config in your app, not code.
+  alias. The operator's `STT_MODEL` in `.env` is the source of truth
+  (currently `Systran/faster-distil-whisper-small.en`; it changes when the
+  GPU engine returns — [stt.md](stt.md)). Treat it as config in your app,
+  not code.
 - `response_format` accepts `json` (default), `verbose_json`, `text`, `srt`,
   `vtt`. Pass `stream: true` to receive the transcript incrementally via
   server-sent events.

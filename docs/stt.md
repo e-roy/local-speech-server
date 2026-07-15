@@ -1,27 +1,33 @@
 # Speech-to-text (STT)
 
 The service exposes OpenAI-compatible speech-to-text alongside TTS, behind
-the same base URL, auth, and CORS policy. Since phase 3a, transcription is
-served by [mlx-audio](https://github.com/Blaizzy/mlx-audio) running
-**natively on the host** — the M4's GPU via Apple's MLX framework — the
-same host-engine pattern as the LLM ([llm.md](llm.md)).
+the same base URL, auth, and CORS policy.
+
+## GPU path status: ON HOLD (rolled back to CPU)
+
+Phase 3a moved transcriptions to [mlx-audio](https://github.com/Blaizzy/mlx-audio)
+on the host (M4 GPU via MLX), but its server **crashes on real requests**:
+MLX core made GPU streams thread-local (~0.31.2) and mlx-audio's server
+touches them from worker threads — `libc++abi … There is no Stream(gpu, N)
+in current thread`, process death, 5xx to consumers. It is an
+ecosystem-wide regression (same crash class in mlx-lm's server, voicebox,
+vllm-mlx; mlx-audio's own issue #744 closed without a published fix).
+Pinning `mlx==0.31.1` broke the server outright (0.4.5 needs newer APIs
+than its declared minimum). Until upstream ships a fix, the Caddy `@stt`
+route points back at the CPU engine. Re-enabling is a one-line route swap
+plus `STT_MODEL` in `.env` (instructions in the Caddyfile comment); the
+measured GPU win when it works was ~1.7 s → ~0.55 s per clip.
 
 ## What runs
 
-- **Transcriptions** (`/v1/audio/transcriptions`): mlx-audio on the host at
-  `host.docker.internal:8001`, GPU-accelerated. Installed and operated per
-  [operations.md](operations.md) — "STT engine (mlx-audio on the host)".
-- **Translations** (`/v1/audio/translations`): still served by the Speaches
-  container (mlx-audio does not expose the endpoint). CPU-bound; fine for
-  its low traffic.
-- Speaches also keeps its own internal Whisper for `/v1/realtime` sessions
-  (realtime does not use the mlx-audio engine — its speech models are
-  internal to Speaches; see [realtime.md](realtime.md)). Its models remain
-  declared in `PRELOAD_MODELS` in `docker-compose.yml`.
-
-Rollback at any time: point the Caddyfile `@stt` route back at
-`speaches:8000`, restart Caddy, and consumers switch models back to
-`Systran/faster-distil-whisper-small.en` — the CPU path never left.
+- **Transcriptions** (`/v1/audio/transcriptions`): Speaches (CPU,
+  faster-whisper int8) — models declared in `PRELOAD_MODELS`.
+- **Translations** (`/v1/audio/translations`): Speaches.
+- `/v1/realtime` sessions use Speaches' internal models regardless
+  ([realtime.md](realtime.md)).
+- The mlx-audio host install (`scripts/setup-stt-engine.sh`,
+  [operations.md](operations.md)) is kept for when upstream fixes land;
+  its LaunchAgent can stay unloaded meanwhile.
 
 ## Endpoints
 
@@ -37,26 +43,19 @@ examples.
 
 ## Models
 
-The default transcription model is set in `.env` as `STT_MODEL` (read by
-`verify-stack.sh` and documented for consumers; the engine itself loads
-whatever model a request names):
+The transcription model consumers should pass is set in `.env` as
+`STT_MODEL` (read by `verify-stack.sh`; treat it as the operator's source
+of truth). While the CPU engine is routed:
 
 | Model | Languages | Notes |
 |---|---|---|
-| `mlx-community/whisper-large-v3-turbo-asr-fp16` | Multilingual | Default — large-v3-turbo accuracy at GPU speed; CPU could never afford this model |
-| `mlx-community/parakeet-tdt-0.6b-v3` | English | Fastest option if English-only and every millisecond counts |
+| `Systran/faster-distil-whisper-small.en` | English only | Current default — must be in `PRELOAD_MODELS` |
+| `Systran/faster-whisper-small` | Multilingual | Alternative; add to `PRELOAD_MODELS` first |
 
-Models download from Hugging Face into the host user's cache on first use
-and load into GPU memory on demand. The operations runbook pre-warms the
-default model so no consumer pays the first-download cost.
-
-The old CPU model IDs (`Systran/faster-whisper-*`) are **not** valid on the
-mlx-audio engine — consumers must use the `mlx-community/...` IDs. Keep the
-model name in consumer config (env var), not code.
-
-`GET /v1/models` still lists the *Speaches* registry (used by realtime and
-translations), not the mlx-audio engine's models — treat `STT_MODEL` as the
-source of truth for transcription.
+When the GPU engine returns, the IDs become `mlx-community/...` names
+(e.g. `mlx-community/whisper-large-v3-turbo-asr-fp16`) — one more reason
+consumers should keep the model name in config (env var), not code. The
+two engines' model IDs are **not** interchangeable.
 
 ## Size and duration limits
 

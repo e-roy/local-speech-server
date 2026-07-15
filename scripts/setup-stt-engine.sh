@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# NOTE: the GPU STT path is currently ON HOLD — mlx-audio's server crashes
+# on real requests (MLX thread-local streams regression; docs/stt.md, "GPU
+# path status"). This script still installs/updates the engine correctly
+# for when upstream fixes land; the Caddy route decides what serves
+# consumers.
+#
 # One-command setup of the host-side STT engine (mlx-audio) on the Mac.
 # Idempotent: safe to re-run over a partial or existing install (it reuses
 # the venv, completes missing packages, rewrites the LaunchAgent, reloads

@@ -68,33 +68,29 @@
             }
         }
 
-        # STT (transcriptions) — mlx-audio on the HOST (native; the M4's
-        # GPU via MLX). request_body is a standalone directive (NOT valid
-        # inside reverse_proxy); the cap matches Cloudflare's own 100 MB
-        # request-body limit on Free/Pro plans. Beyond it Caddy answers 413.
-        # Rollback to the CPU engine: change the upstream back to
-        # speaches:8000 and restart caddy.
+        # STT (transcriptions) — Speaches (CPU). The GPU engine (mlx-audio
+        # on the host at host.docker.internal:8001) is ON HOLD: its server
+        # crashes under real requests due to MLX's thread-local streams
+        # regression (docs/stt.md, "GPU path status"). To re-enable when
+        # fixed upstream: swap the upstream back to
+        # host.docker.internal:8001 with transport dial_timeout 2s and the
+        # header_up Host/{upstream_hostport} + header_up -Origin defenses,
+        # and set STT_MODEL back to the mlx-community model in .env.
+        # request_body is a standalone directive (NOT valid inside
+        # reverse_proxy); the cap matches Cloudflare's own 100 MB limit.
         @stt path /v1/audio/transcriptions*
         handle @stt {
             request_body {
                 max_size 100MB
             }
-            reverse_proxy host.docker.internal:8001 {
-                transport http {
-                    # Fail fast when the engine is off (see handle_errors).
-                    dial_timeout 2s
-                }
-                # Same defenses as the Ollama route: present the upstream's
-                # own name and drop Origin — Caddy owns CORS.
-                header_up Host {upstream_hostport}
-                header_up -Origin
+            reverse_proxy speaches:8000 {
                 header_down -Access-Control-Allow-Origin
                 header_down -Access-Control-Allow-Methods
                 header_down -Access-Control-Allow-Headers
                 header_down -Access-Control-Max-Age
                 header_down -Access-Control-Allow-Credentials
                 header_down -Vary
-                # Unbuffered so streamed transcripts flow as produced.
+                # Unbuffered so stream=true SSE transcripts flow as produced.
                 flush_interval -1
             }
         }
