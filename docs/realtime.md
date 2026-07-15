@@ -59,10 +59,12 @@ response deltas out.
   support `response.cancel`, so there is no barge-in — let a reply finish
   (or stop playback locally and ignore the rest).
 - **Latency is "walkie-talkie", not "phone call".** Upstream notes
-  realtime-grade performance requires CUDA; our speech engines are
-  CPU-bound in Docker. Expect a few seconds from end-of-speech to first
-  reply audio. The native-MLX migration ([llm.md](llm.md), phase 3) is the
-  lever if this ever matters enough.
+  realtime-grade performance requires CUDA, and realtime sessions use
+  Speaches' *internal* CPU speech models — they do not benefit from the
+  faster host-side engine that serves `/v1/audio/transcriptions` (those
+  backends are not configurable upstream). Expect a few seconds from
+  end-of-speech to first reply audio; the fast path for conversation is
+  the client-orchestrated cascade ([consumer-integration.md](consumer-integration.md)).
 - **Echo:** there is no server-side echo cancellation. If the mic can hear
   the speakers, the assistant will transcribe itself — use headphones or
   browser echo cancellation (`getUserMedia` `echoCancellation: true`).

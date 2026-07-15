@@ -14,6 +14,7 @@ These system settings make the stack survive reboots, power blips, and being lef
 6. **Docker Desktop resources.** Docker Desktop → Settings → Resources → CPUs ≥ 4, Memory ≥ 6 GB. Kokoro-CPU is light; the STT model adds roughly a gigabyte while loaded — headroom helps.
 7. **Container restart policy.** Already set to `restart: unless-stopped` in `docker-compose.yml`. Containers come back automatically when Docker Desktop comes back.
 8. **Ollama autostart (only if using the LLM features).** Ollama menu-bar icon → Settings → "Start at login" → on. See [llm.md](llm.md).
+9. **mlx-audio LaunchAgent (STT engine).** Installed per "STT engine (mlx-audio on the host)" below — `RunAtLoad` + `KeepAlive` make it reboot-safe once loaded.
 
 Verify: reboot, wait ~60 seconds, and from a different machine run
 
@@ -131,6 +132,68 @@ Ollama running natively on the Mac (for GPU access; see
 - **When it's down:** `/v1/llm/*` requests fail fast with an OpenAI-style
   JSON 502; TTS/STT are unaffected and `verify-stack.sh` reports a
   non-fatal WARN. Check with `ollama ps` on the host.
+
+## STT engine (mlx-audio on the host)
+
+Transcriptions are served by mlx-audio running natively on the Mac (GPU via
+MLX) — like Ollama, a host dependency outside `docker compose`, fronted by
+Caddy at `host.docker.internal:8001`. One-time setup:
+
+```bash
+mkdir -p ~/mlx-audio && cd ~/mlx-audio
+python3 -m venv .venv                # needs Python 3.10+ (Xcode CLT or brew)
+.venv/bin/pip install mlx-audio
+# foreground smoke test, then Ctrl-C:
+.venv/bin/python -m mlx_audio.server --host 127.0.0.1 --port 8001
+```
+
+Then install the LaunchAgent so it survives reboots (replace `USERNAME`):
+
+```xml
+<!-- ~/Library/LaunchAgents/com.local-speech.mlx-audio.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.local-speech.mlx-audio</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/USERNAME/mlx-audio/.venv/bin/python</string>
+        <string>-m</string><string>mlx_audio.server</string>
+        <string>--host</string><string>127.0.0.1</string>
+        <string>--port</string><string>8001</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>/tmp/mlx-audio.log</string>
+    <key>StandardErrorPath</key><string>/tmp/mlx-audio.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.local-speech.mlx-audio.plist
+launchctl list | grep mlx-audio      # should show the label
+
+# pre-warm: the first request downloads the model from Hugging Face
+curl -s http://127.0.0.1:8001/v1/audio/transcriptions \
+  -F file=@clip.wav -F model=mlx-community/whisper-large-v3-turbo-asr-fp16
+
+./scripts/verify-stack.sh            # STT engine check + round-trip must pass
+```
+
+Notes:
+
+- Bound to `127.0.0.1` deliberately — reachable from the containers via
+  `host.docker.internal`, invisible to the LAN; Caddy remains the only door.
+- Logs: `tail -f /tmp/mlx-audio.log`. Update: `.venv/bin/pip install -U
+  mlx-audio`, then `launchctl kickstart -k gui/$(id -u)/com.local-speech.mlx-audio`.
+- **When it's down:** transcriptions fail fast with an OpenAI-style JSON
+  502 and `verify-stack.sh` FAILs with a pointed message (unlike the LLM,
+  STT is a core capability). Emergency rollback to the CPU engine: in
+  `caddy/Caddyfile` point the `@stt` route back at `speaches:8000`,
+  `docker compose restart caddy`, and tell consumers to use
+  `Systran/faster-distil-whisper-small.en` again.
 
 ## Updating cloudflared
 

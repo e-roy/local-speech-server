@@ -54,9 +54,9 @@ docker compose up -d --force-recreate <service>
 
 ## Architecture
 
-Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/path routing) → Kokoro-FastAPI (`:8880`, `/v1/audio/speech` + `/v1/audio/voices`) or Speaches (`:8000`, `/v1/audio/transcriptions` + `/v1/audio/translations`, plus read-only `GET /v1/models*` for discovery)**. Authenticated requests to any other path get 404 — the published surface is deliberately smaller than what the backends expose.
+Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/path routing) → Kokoro-FastAPI (`:8880`, `/v1/audio/speech` + `/v1/audio/voices`), Speaches (`:8000`, `/v1/audio/translations` + read-only `GET /v1/models*`), or the host-side engines below**. Authenticated requests to any other path get 404 — the published surface is deliberately smaller than what the backends expose.
 
-One backend is host-side, not containerized: `/v1/llm/*` rewrites to `/v1/*` on `host.docker.internal:11434` (Ollama, native for GPU access — see [docs/llm.md](docs/llm.md)). It is an optional dependency: when absent, Caddy fails the dial in ~2 s and a site-wide `handle_errors` shapes 502/503/504 into OpenAI-style JSON; `verify-stack.sh` treats it as WARN, not FAIL.
+Two backends are host-side, not containerized — native for GPU access, since Docker on macOS is CPU-only: `/v1/llm/*` rewrites to `/v1/*` on `host.docker.internal:11434` (Ollama — [docs/llm.md](docs/llm.md)), and `/v1/audio/transcriptions` proxies to `host.docker.internal:8001` (mlx-audio — [docs/stt.md](docs/stt.md)). Both fail fast (~2 s dial timeout) into a site-wide `handle_errors` that shapes 502/503/504 as OpenAI-style JSON. `verify-stack.sh` treats the LLM as optional (WARN) but the STT engine as core (FAIL). Both proxies rewrite the upstream `Host` and strip `Origin` — Ollama's DNS-rebinding protection 403s foreign hostnames; keep those `header_up` lines.
 
 `/v1/realtime` (WebSocket, Speaches) is the composed voice-session mode — server-side STT → LLM → TTS with VAD turn-taking ([docs/realtime.md](docs/realtime.md)). It is the only route that also accepts `?api_key=` query auth, because browser WebSockets cannot set an `Authorization` header; that matcher is scoped to exactly this path and mirrors the placeholder-key rejection.
 

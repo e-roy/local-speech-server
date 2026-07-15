@@ -106,13 +106,30 @@ if [[ "$n" -lt 1 ]]; then
 fi
 echo "  ok ($n voices installed)"
 
-# Use the first preloaded model from docker-compose.yml unless overridden.
-STT_MODEL="${STT_MODEL:-$(docker compose config 2>/dev/null | sed -n 's/.*PRELOAD_MODELS[=:][^[]*\["\([^"]*\)".*/\1/p' | head -1)}"
-STT_MODEL="${STT_MODEL:-Systran/faster-distil-whisper-small.en}"
+# STT model: env override, then .env, then the stack default. Served by the
+# host-side mlx-audio engine — see docs/stt.md.
+STT_MODEL="${STT_MODEL:-$(env_val STT_MODEL)}"
+STT_MODEL="${STT_MODEL:-mlx-community/whisper-large-v3-turbo-asr-fp16}"
 
-echo "Checking /v1/models lists the STT model..."
-if ! curl -fsS -H "Authorization: Bearer $KEY" "$BASE/v1/models" | grep -q "$STT_MODEL"; then
-  echo "FAIL: /v1/models did not include $STT_MODEL. Either the model" >&2
+echo "Checking STT engine (mlx-audio on the host)..."
+stt_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -X POST -H "Authorization: Bearer $KEY" "$BASE/v1/audio/transcriptions" || true)
+if [[ "$stt_code" == "502" || "$stt_code" == "000" || -z "$stt_code" ]]; then
+  echo "FAIL: the STT engine is not reachable (got ${stt_code:-000}). Check the" >&2
+  echo "      mlx-audio service on the host ('launchctl list | grep mlx-audio')" >&2
+  echo "      and docs/operations.md. Emergency rollback: point the Caddyfile" >&2
+  echo "      @stt route back at speaches:8000 and restart caddy." >&2
+  exit 1
+fi
+echo "  ok (engine answered $stt_code to an empty request)"
+
+echo "Checking /v1/models lists the Speaches model (realtime/translations)..."
+# The transcriptions model (STT_MODEL) lives on the mlx-audio engine and is
+# exercised by the round-trip check below; this check guards the model
+# Speaches itself still needs, taken from PRELOAD_MODELS.
+speaches_model=$(docker compose config 2>/dev/null | sed -n 's/.*PRELOAD_MODELS[=:][^[]*\["\([^"]*\)".*/\1/p' | head -1)
+speaches_model="${speaches_model:-Systran/faster-distil-whisper-small.en}"
+if ! curl -fsS -H "Authorization: Bearer $KEY" "$BASE/v1/models" | grep -q "$speaches_model"; then
+  echo "FAIL: /v1/models did not include $speaches_model. Either the model" >&2
   echo "      download failed (check 'docker compose logs speaches') or the" >&2
   echo "      Caddy models route is missing." >&2
   exit 1

@@ -1,119 +1,91 @@
 # Speech-to-text (STT)
 
-The service exposes OpenAI-compatible speech-to-text alongside TTS, behind the
-same base URL, auth, and CORS policy. STT is served by
-[Speaches](https://github.com/speaches-ai/speaches) (formerly
-`faster-whisper-server`), which runs Whisper-family models via faster-whisper.
+The service exposes OpenAI-compatible speech-to-text alongside TTS, behind
+the same base URL, auth, and CORS policy. Since phase 3a, transcription is
+served by [mlx-audio](https://github.com/Blaizzy/mlx-audio) running
+**natively on the host** — the M4's GPU via Apple's MLX framework — the
+same host-engine pattern as the LLM ([llm.md](llm.md)).
 
 ## What runs
 
-- Image: `ghcr.io/speaches-ai/speaches:0.9.0-rc.3-cpu` — pinned because the
-  0.9 line introduced the config surface we rely on (`PRELOAD_MODELS`); bump
-  to `0.9.0` final when released. The `-cpu` image is multi-arch and runs
-  natively on Apple Silicon (linux/arm64).
-- Caddy routes `/v1/audio/transcriptions*` and `/v1/audio/translations*` to
-  `speaches:8000`; everything TTS-related stays on Kokoro-FastAPI.
-- Models live in the `speaches_models` named volume (the Hugging Face hub
-  cache, mounted at `/home/ubuntu/.cache/huggingface/hub`).
+- **Transcriptions** (`/v1/audio/transcriptions`): mlx-audio on the host at
+  `host.docker.internal:8001`, GPU-accelerated. Installed and operated per
+  [operations.md](operations.md) — "STT engine (mlx-audio on the host)".
+- **Translations** (`/v1/audio/translations`): still served by the Speaches
+  container (mlx-audio does not expose the endpoint). CPU-bound; fine for
+  its low traffic.
+- Speaches also keeps its own internal Whisper for `/v1/realtime` sessions
+  (realtime does not use the mlx-audio engine — its speech models are
+  internal to Speaches; see [realtime.md](realtime.md)). Its models remain
+  declared in `PRELOAD_MODELS` in `docker-compose.yml`.
+
+Rollback at any time: point the Caddyfile `@stt` route back at
+`speaches:8000`, restart Caddy, and consumers switch models back to
+`Systran/faster-distil-whisper-small.en` — the CPU path never left.
 
 ## Endpoints
 
 ```
-POST /v1/audio/transcriptions   # speech → text (same language)
-POST /v1/audio/translations     # speech → English text
+POST /v1/audio/transcriptions   # speech → text (same language) — GPU
+POST /v1/audio/translations     # speech → English text — CPU (Speaches)
 ```
 
 Multipart form fields follow the OpenAI Whisper API: `file`, `model`, and
-optionally `language`, `prompt`, `response_format`, `temperature`.
-`response_format` accepts `json` (default), `verbose_json`, `text`, `srt`,
-`vtt`. Passing `stream=true` returns the transcript incrementally via
-server-sent events as the audio is processed — Caddy proxies this unbuffered.
-
-See [consumer-integration.md](consumer-integration.md) for SDK and `fetch()`
+optionally `language`, `prompt`, `response_format`, `temperature`. See
+[consumer-integration.md](consumer-integration.md) for SDK and `fetch()`
 examples.
 
 ## Models
 
-Speaches loads models dynamically per request, but **only models that have
-already been downloaded can be used** — a request naming an unknown model
-fails; nothing downloads implicitly at request time. Downloads are declared in
-`docker-compose.yml`:
-
-```yaml
-- 'PRELOAD_MODELS=["Systran/faster-distil-whisper-small.en"]'
-```
-
-Model IDs are Hugging Face repo names (there is no `whisper-1` alias — the
-OpenAI SDK's `model` parameter takes the full ID). Models are downloaded at
-container startup if missing, then loaded into memory on first use and
-unloaded after 5 idle minutes (`STT_MODEL_TTL`, default 300 s), so the first
-request after a quiet period pays a few seconds of load time.
-
-Reasonable choices for CPU inference:
+The default transcription model is set in `.env` as `STT_MODEL` (read by
+`verify-stack.sh` and documented for consumers; the engine itself loads
+whatever model a request names):
 
 | Model | Languages | Notes |
 |---|---|---|
-| `Systran/faster-distil-whisper-small.en` | English only | Default here — best speed/quality trade-off on CPU |
-| `Systran/faster-whisper-base.en` | English only | Lighter and faster, noticeably less accurate |
-| `Systran/faster-whisper-small` | Multilingual | Use if you need non-English audio |
-| `Systran/faster-distil-whisper-medium.en` | English only | More accurate; test whether CPU latency is acceptable |
+| `mlx-community/whisper-large-v3-turbo-asr-fp16` | Multilingual | Default — large-v3-turbo accuracy at GPU speed; CPU could never afford this model |
+| `mlx-community/parakeet-tdt-0.6b-v3` | English | Fastest option if English-only and every millisecond counts |
 
-Anything `large` is not a realistic fit for CPU-only inference — see
-"Performance" below. To change, add, or remove models, follow
-[operations.md](operations.md) — "Changing the STT model".
+Models download from Hugging Face into the host user's cache on first use
+and load into GPU memory on demand. The operations runbook pre-warms the
+default model so no consumer pays the first-download cost.
+
+The old CPU model IDs (`Systran/faster-whisper-*`) are **not** valid on the
+mlx-audio engine — consumers must use the `mlx-community/...` IDs. Keep the
+model name in consumer config (env var), not code.
+
+`GET /v1/models` still lists the *Speaches* registry (used by realtime and
+translations), not the mlx-audio engine's models — treat `STT_MODEL` as the
+source of truth for transcription.
 
 ## Size and duration limits
 
-- **100 MB request cap.** Caddy rejects larger uploads with 413; Cloudflare's
-  edge enforces the same 100 MB limit on Free/Pro plans anyway. That is
-  roughly an hour of 16 kHz WAV — far more of Opus/M4A.
-- **~100 s response timeout.** Cloudflare returns 524 if the origin takes
-  longer than ~100 seconds to respond. Short clips are nowhere near this;
-  very long recordings on CPU can be. Mitigations, in order: use a distil
-  model, pass `stream=true` (headers and partial results flow immediately, so
-  the timeout never triggers), or split long recordings client-side.
-  Requests over the LAN or via the smoke setup bypass Cloudflare and have no
-  such limit.
+- **100 MB request cap** (Caddy 413; Cloudflare enforces the same on
+  Free/Pro plans). Roughly an hour of 16 kHz WAV; far more as Opus/M4A.
+- **~100 s Cloudflare response timeout.** With GPU transcription this now
+  takes truly long recordings to hit — and LAN/smoke requests bypass it
+  entirely. Split extremely long recordings client-side if needed.
 
 ## Performance
 
-Inference is CPU-only: Docker on macOS cannot use the M-series GPU or Neural
-Engine, and faster-whisper has no Metal backend regardless. Expect the
-small/distil models to run a few times faster than realtime on an M-series
-CPU — fine for dictation and voice notes; slow for hour-long recordings.
-
-If long-form or heavier workloads ever matter, the upgrade path is to run a
-Metal-accelerated engine natively on the Mac (e.g. an MLX-based server that
-speaks the same OpenAI shape) and point the Caddy `@stt` route at
-`host.docker.internal:<port>` instead of `speaches:8000`. Because consumers
-only depend on the OpenAI API shape, that swap touches one line of the
-Caddyfile and no client code.
+Measured on the Mac Mini M4 (through the tunnel, warm): the CPU engine
+transcribed a ~2 s clip in ~1.7 s; the GPU engine is expected around
+0.3–0.5 s for the same clip with a *larger, more accurate* model —
+verify-stack's round-trip and the timing snippets in the git history are
+the measurement tools. If the engine is down, requests fail fast with the
+same OpenAI-style JSON 502 used by the LLM route, and `verify-stack.sh`
+fails with a pointed message.
 
 ## Design notes
 
-- **Separate service, not consolidation.** Speaches can also serve TTS
-  (it bundles Kokoro), so the stack could in principle collapse to one
-  engine container. That would change the TTS `model`/voices API shape that
-  existing consumers and the `/voices` page depend on, for no performance
-  gain — the same models do the work either way. Revisit only if the
-  duplicate container ever becomes a real cost.
-- **`/v1/audio/voices` routes to Kokoro.** Speaches exposes its own voices
-  endpoint for its TTS side; the Caddyfile deliberately shadows it because
-  Kokoro is the TTS engine here.
-- **Unrouted paths 404.** Both backends expose more routes than the service
-  publishes (model management, docs pages, health). Caddy forwards the
-  documented `/v1/audio/*` surface plus read-only model discovery
-  (`GET /v1/models`, `GET /v1/models/{id}`, served by Speaches so SDKs and
-  agents can list installed STT models). Mutating model management (POST /
-  DELETE) stays unrouted and happens on the Docker network via
-  `docker compose exec` (see operations.md).
-
-## Related extensions
-
-- **Realtime / speech-to-speech: implemented.** `/v1/realtime` (WebSocket)
-  runs the composed STT → LLM → TTS loop server-side — see
-  [realtime.md](realtime.md). Note `intent=transcription` gives streaming
-  STT-only sessions, an alternative to `stream=true` on this endpoint.
-- **Multiple TTS voice engines.** If a second TTS engine (e.g. Piper) is ever
-  desired, add it as a parallel service and route by URL path, mirroring how
-  STT was added.
+- **À la carte holds.** Transcription is one route to one engine;
+  translations and realtime are separate routes to a different engine.
+  Consumers depend on the API shape, never on which engine serves it —
+  which is exactly what made this swap a one-line Caddy change.
+- **Host engines are the performance tier.** Docker on macOS cannot reach
+  the GPU, so the heavy engines (LLM, now STT) live on the host behind
+  Caddy's auth, while the light/orchestration pieces stay containerized.
+- **Phase 3b (TTS) is scoped but not built**: same pattern for
+  `/v1/audio/speech`, pending voice-list parity between Kokoro-FastAPI's
+  110 voices and mlx-audio's Kokoro set — the `/voices` page and consumer
+  voice IDs must keep working. See [llm.md](llm.md) roadmap.

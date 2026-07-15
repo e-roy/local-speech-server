@@ -36,11 +36,10 @@ TTS is backed by [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI); STT
    │                        │            │    │ kokoro_models    │   │
    │                        │            │    └──────────────────┘   │
    │                        │            │    ┌──────────────────┐   │
-   │                        │            │───►│  Speaches (STT)  │   │
-   │                        └────────────┘STT │  (Docker) :8000  │   │
+   │                        │            │───►│  Speaches        │   │
+   │                        └────────────┘    │  (Docker) :8000  │   │
    │                                          │  /v1/audio/      │   │
-   │                                          │   transcriptions,│   │
-   │                                          │   translations   │   │
+   │                                          │    translations  │   │
    │                                          │ /v1/realtime (WS)│   │
    │                                          └────────┬─────────┘   │
    │                                                   ▼             │
@@ -50,13 +49,14 @@ TTS is backed by [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI); STT
    │                                          └──────────────────┘   │
    │                                                                 │
    │  ┌───────────────────────────────────────────────────────────┐  │
-   │  │ host-native (no Docker): Ollama :11434 - LLM on the GPU   │  │
-   │  │ reached by Caddy at /v1/llm/* (via host.docker.internal)  │  │
+   │  │ host-native (no Docker, GPU via host.docker.internal):    │  │
+   │  │  Ollama    :11434 - LLM   - /v1/llm/*                     │  │
+   │  │  mlx-audio :8001  - STT   - /v1/audio/transcriptions      │  │
    │  └───────────────────────────────────────────────────────────┘  │
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-Cloudflare's edge terminates TLS with a browser-trusted cert; traffic flows through a persistent tunnel to `cloudflared` on the Mac Mini, which forwards to Caddy over the Docker network. Caddy enforces bearer-token auth and CORS, then routes by path: speech synthesis and voice listing to Kokoro-FastAPI, transcription and translation to Speaches, and `/v1/llm/*` to an optional Ollama running natively on the host (native so the LLM gets the GPU — Docker on macOS is CPU-only). The stack runs fine without Ollama; LLM routes then fail fast with a JSON 502.
+Cloudflare's edge terminates TLS with a browser-trusted cert; traffic flows through a persistent tunnel to `cloudflared` on the Mac Mini, which forwards to Caddy over the Docker network. Caddy enforces bearer-token auth and CORS, then routes by path: speech synthesis and voice listing to Kokoro-FastAPI, transcription to mlx-audio running natively on the host (the GPU path — Docker on macOS is CPU-only), translation and realtime sessions to Speaches, and `/v1/llm/*` to Ollama, also host-native. A host engine that is down fails fast with a JSON 502; the containers run regardless.
 
 ## Prerequisites
 

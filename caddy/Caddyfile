@@ -68,12 +68,41 @@
             }
         }
 
-        # STT — Speaches. request_body is a standalone directive (it is NOT
-        # valid inside reverse_proxy); the cap matches Cloudflare's own
-        # 100 MB request-body limit on Free/Pro plans. Beyond it Caddy
-        # answers 413.
-        @stt path /v1/audio/transcriptions* /v1/audio/translations*
+        # STT (transcriptions) — mlx-audio on the HOST (native; the M4's
+        # GPU via MLX). request_body is a standalone directive (NOT valid
+        # inside reverse_proxy); the cap matches Cloudflare's own 100 MB
+        # request-body limit on Free/Pro plans. Beyond it Caddy answers 413.
+        # Rollback to the CPU engine: change the upstream back to
+        # speaches:8000 and restart caddy.
+        @stt path /v1/audio/transcriptions*
         handle @stt {
+            request_body {
+                max_size 100MB
+            }
+            reverse_proxy host.docker.internal:8001 {
+                transport http {
+                    # Fail fast when the engine is off (see handle_errors).
+                    dial_timeout 2s
+                }
+                # Same defenses as the Ollama route: present the upstream's
+                # own name and drop Origin — Caddy owns CORS.
+                header_up Host {upstream_hostport}
+                header_up -Origin
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Max-Age
+                header_down -Access-Control-Allow-Credentials
+                header_down -Vary
+                # Unbuffered so streamed transcripts flow as produced.
+                flush_interval -1
+            }
+        }
+
+        # Translations (audio → English) — stays on Speaches; mlx-audio
+        # does not expose the endpoint.
+        @translations path /v1/audio/translations*
+        handle @translations {
             request_body {
                 max_size 100MB
             }
@@ -84,8 +113,6 @@
                 header_down -Access-Control-Max-Age
                 header_down -Access-Control-Allow-Credentials
                 header_down -Vary
-                # Unbuffered so stream=true SSE transcripts flow as produced;
-                # harmless for plain JSON responses.
                 flush_interval -1
             }
         }
@@ -205,6 +232,6 @@
     # restart with the stack).
     handle_errors 502 503 504 {
         header Content-Type application/json
-        respond `{"error":{"message":"Upstream engine unavailable. If this was a /v1/llm request, check that Ollama is running on the host.","type":"api_error","code":"upstream_unavailable"}}`
+        respond `{"error":{"message":"Upstream engine unavailable. A host-side engine may be down: Ollama serves /v1/llm, mlx-audio serves /v1/audio/transcriptions. See docs/operations.md.","type":"api_error","code":"upstream_unavailable"}}`
     }
 }

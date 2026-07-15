@@ -90,8 +90,10 @@ Operational setup (autostart at login, pulling models, keep-alive) lives in
   (WebSocket, served by Speaches with `CHAT_COMPLETION_BASE_URL` pointed at
   this same Ollama) orchestrates STT → LLM → TTS server-side. See
   [realtime.md](realtime.md) for usage and limitations.
-- **Phase 3 — native speech engines.** If realtime latency matters enough,
-  move STT/TTS to MLX on the host (e.g.
-  [mlx-audio](https://github.com/Blaizzy/mlx-audio) serves both Whisper and
-  Kokoro with an OpenAI-compatible API) and repoint the Caddy routes at
-  `host.docker.internal` — consumers never notice.
+- **Phase 3a — native STT: implemented.** `/v1/audio/transcriptions` is
+  served by [mlx-audio](https://github.com/Blaizzy/mlx-audio) on the host
+  (GPU) — see [stt.md](stt.md).
+- **Phase 3b — native TTS: pending.** Same pattern for `/v1/audio/speech`,
+  blocked on voice-list parity (the `/voices` page and consumer voice IDs
+  must survive the swap). Note neither phase changes `/v1/realtime` — its
+  speech engines are internal to Speaches and not configurable upstream.
