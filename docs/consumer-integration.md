@@ -105,6 +105,10 @@ Notes:
 - `response_format` accepts `json` (default), `verbose_json`, `text`, `srt`,
   `vtt`. Pass `stream: true` to receive the transcript incrementally via
   server-sent events.
+- **Captions and timing:** `srt`/`vtt` return ready-to-use subtitle files;
+  `verbose_json` returns segment timings, and adding
+  `timestamp_granularities: ["word"]` also returns a `words[]` array with
+  per-word `start`/`end` — verified working for karaoke-precision captions.
 - Uploads are capped at 100 MB, and a single request should finish within
   ~100 s (Cloudflare's response timeout) — for long recordings use
   `stream=true` or split the audio client-side. Details in [stt.md](stt.md).
