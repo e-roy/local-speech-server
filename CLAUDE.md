@@ -55,7 +55,7 @@ docker compose up -d --force-recreate <service>
 
 ## Architecture
 
-Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/path routing) → Kokoro-FastAPI (`:8880`, `/v1/audio/speech` + `/v1/audio/voices`), Speaches (`:8000`, `/v1/audio/translations` + read-only `GET /v1/models*`), or the host-side engines below**. Authenticated requests to any other path get 404 — the published surface is deliberately smaller than what the backends expose.
+Request path: **client → Cloudflare edge (TLS) → cloudflared (tunnel) → Caddy (auth/CORS/path routing) → Kokoro-FastAPI (`:8880`, `/v1/audio/speech` + `/v1/audio/voices` + the non-OpenAI `/dev/captioned_speech` word-timestamp extension), Speaches (`:8000`, `/v1/audio/translations` + read-only `GET /v1/models*`), or the host-side engines below**. Authenticated requests to any other path get 404 — the published surface is deliberately smaller than what the backends expose.
 
 Two backends are host-side, not containerized — native for GPU access, since Docker on macOS is CPU-only: `/v1/llm/*` rewrites to `/v1/*` on `host.docker.internal:11434` (Ollama — [docs/llm.md](docs/llm.md)), and `/v1/audio/transcriptions` proxies to `host.docker.internal:8001` (mlx-audio — [docs/stt.md](docs/stt.md)). Both fail fast (~2 s dial timeout) into a site-wide `handle_errors` that shapes 502/503/504 as OpenAI-style JSON. `verify-stack.sh` treats the LLM as optional (WARN) but the STT engine as core (FAIL). Both proxies rewrite the upstream `Host` and strip `Origin` — Ollama's DNS-rebinding protection 403s foreign hostnames; keep those `header_up` lines.
 

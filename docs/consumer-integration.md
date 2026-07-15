@@ -65,6 +65,34 @@ new Audio(URL.createObjectURL(blob)).play();
 
 > Only browsers loaded from an origin in the operator's `ALLOWED_ORIGINS` allowlist can call this from JS. For a different origin (e.g. a new app or a localhost dev server), ask the operator to add it to `ALLOWED_ORIGINS` and re-apply the config — see [operations.md](operations.md).
 
+## TTS with word timestamps (karaoke-style highlighting)
+
+To know *when each word is spoken* in generated audio — highlight-as-it-
+speaks UIs, precise caption overlay — use `POST /dev/captioned_speech`.
+Same auth and fields as `/v1/audio/speech`, but the response is JSON:
+base64 audio plus word timings.
+
+```ts
+const res = await fetch("https://speech.example.com/dev/captioned_speech", {
+  method: "POST",
+  headers: { "Authorization": `Bearer ${SPEECH_API_KEY}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "kokoro", voice: "af_bella",
+    input: "Hello from the browser.",
+    response_format: "mp3",
+    stream: false,           // true streams JSON chunks as they render
+  }),
+});
+const { audio, timestamps } = await res.json();
+// audio: base64 mp3 — decode and play
+// timestamps: [{ word, start_time, end_time }, ...] — drive the highlight
+```
+
+> **Portability caveat:** this is a Kokoro-FastAPI extension, not part of
+> the OpenAI API (which has no TTS timestamp feature) — hence the `/dev/`
+> path. A consumer using it is engine-coupled by choice; everything under
+> `/v1/` remains provider-portable.
+
 ## Speech-to-text (transcription)
 
 ### Using the OpenAI Node SDK

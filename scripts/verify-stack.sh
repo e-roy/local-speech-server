@@ -185,7 +185,8 @@ echo "  ok"
 
 echo "Checking TTS -> STT round-trip (synthesize a clip, then transcribe it)..."
 clip=$(mktemp)
-trap 'rm -f "$clip"' EXIT
+capf=$(mktemp)
+trap 'rm -f "$clip" "$capf"' EXIT
 if ! curl -fsS -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"model":"kokoro","voice":"af_bella","input":"stack verification test","response_format":"wav"}' \
   -o "$clip" "$BASE/v1/audio/speech"; then
@@ -204,6 +205,21 @@ if ! grep -qi "verification" <<<"$transcript"; then
   exit 1
 fi
 echo "  ok (model: $STT_MODEL)"
+
+echo "Checking TTS word timestamps (/dev/captioned_speech)..."
+if ! curl -fsS --max-time 60 -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"kokoro","voice":"af_bella","input":"word timing check","response_format":"mp3","stream":false}' \
+  -o "$capf" "$BASE/dev/captioned_speech"; then
+  echo "FAIL: captioned speech request failed. If the kokoro image predates" >&2
+  echo "      the endpoint, update it: docker compose pull kokoro &&" >&2
+  echo "      docker compose up -d --force-recreate kokoro" >&2
+  exit 1
+fi
+if ! grep -q '"timestamps"' "$capf"; then
+  echo "FAIL: captioned speech response contained no timestamps." >&2
+  exit 1
+fi
+echo "  ok"
 
 echo
 echo "Stack healthy."
