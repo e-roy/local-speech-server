@@ -1,5 +1,20 @@
 # Realtime voice sessions
 
+## Status: ON HOLD (broken upstream)
+
+Speaches 0.9.0-rc.3's realtime sessions die after the first turn with
+`AssertionError: fastapi_middleware_astack not found in request scope` —
+[speaches#559](https://github.com/speaches-ai/speaches/issues/559), open
+since October 2025 with no published fix (master included). The route,
+auth, and WebSocket wiring in this stack are verified working
+(`verify-stack.sh` completes real upgrades through the full production
+chain); the failure is inside Speaches' session lifecycle. Until upstream
+fixes it, **build conversational UX on the cascade instead**: STT →
+streaming LLM → TTS over the à-la-carte HTTP endpoints with client-side
+push-to-talk or VAD ([consumer-integration.md](consumer-integration.md))
+— that was already the recommended low-latency path. Watch for a Speaches
+release referencing #559 or realtime session fixes before revisiting.
+
 `/v1/realtime` is a WebSocket endpoint implementing the OpenAI Realtime API
 shape, served by Speaches. It is the stack's **composed** mode: one
 connection in which Speaches orchestrates STT → LLM → TTS server-side, with

@@ -86,10 +86,11 @@ Operational setup (autostart at login, pulling models, keep-alive) lives in
 
 ## Roadmap
 
-- **Phase 2 — realtime conversation: implemented.** `/v1/realtime`
-  (WebSocket, served by Speaches with `CHAT_COMPLETION_BASE_URL` pointed at
-  this same Ollama) orchestrates STT → LLM → TTS server-side. See
-  [realtime.md](realtime.md) for usage and limitations.
+- **Phase 2 — realtime conversation: built, ON HOLD upstream.** The
+  `/v1/realtime` wiring (route, auth, WebSocket) is verified, but Speaches
+  rc.3 sessions die after one turn (speaches#559, unfixed). Conversation
+  UX runs on the cascade until upstream ships a fix — see
+  [realtime.md](realtime.md), "Status".
 - **Phase 3a — native STT: built, currently ON HOLD.** The mlx-audio
   server crashes on real requests (upstream MLX thread-local streams
   regression); transcriptions are rolled back to the CPU engine until a

@@ -179,6 +179,11 @@ try {
 
 ## Realtime voice sessions (WebSocket)
 
+> **Currently on hold** — an upstream Speaches bug kills sessions after the
+> first turn ([realtime.md](realtime.md), "Status"). Build conversational
+> UX on the cascade above (STT → streaming LLM → TTS with client-side
+> turn-taking) until it is fixed.
+
 For hands-free conversation, `wss://speech.example.com/v1/realtime` runs the
 whole hear → think → speak loop server-side over one WebSocket, with
 voice-activity detection handling turn-taking (OpenAI Realtime API event
